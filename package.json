@@ -1,0 +1,19 @@
+{
+  "name": "ha-central-heating-card",
+  "version": "0.1.0",
+  "description": "Lovelace card for Home Assistant: oil or gas central heating (Wolf, Viessmann) with burner, temperatures, analyses and optimisation tips.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "lint": "biome check src test scripts demo",
+    "check": "biome check src test scripts demo && node scripts/build.mjs && node --check dist/ha-central-heating-card.js",
+    "test": "TZ=America/New_York node --test test/*.test.mjs",
+    "demo": "node scripts/build.mjs && node scripts/serve.mjs"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "@biomejs/biome": "2.6.4",
+    "esbuild": "0.25.12"
+  }
+}
