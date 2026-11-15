@@ -31,6 +31,7 @@ const S = {
     ww_d2: "Zeitprogramm Warmwasser auf morgens und abends begrenzen",
     flat_t: "Vorlauf folgt dem Wetter kaum",
     flat_s: "{f} °C bei 0 °C, nur {b} K mehr je 1 K kälter",
+    flat_s0: "{f} °C bei 0 °C, egal wie kalt es draußen ist",
     flat_g: "≈ 3–5 %",
     flat_e1: "Vorlauf bei 0 °C",
     flat_e2: "je 1 K kälter",
@@ -112,6 +113,7 @@ const S = {
     ww_d2: "Limit the hot-water time program to mornings and evenings",
     flat_t: "Flow hardly follows the weather",
     flat_s: "{f} °C at 0 °C, only {b} K more per 1 K colder",
+    flat_s0: "{f} °C at 0 °C, however cold it is outside",
     flat_g: "≈ 3–5 %",
     flat_e1: "Flow at 0 °C",
     flat_e2: "per 1 K colder",
@@ -255,7 +257,8 @@ export function buildTips(x) {
         id: "flat",
         sev: "mid",
         title: tt("flat_t"),
-        short: tt("flat_s", { f: n(cp.fit.a), b: n(Math.max(0, -cp.fit.b), 2) }),
+        short:
+          cp.fit.b > -0.05 ? tt("flat_s0", { f: n(cp.fit.a) }) : tt("flat_s", { f: n(cp.fit.a), b: n(-cp.fit.b, 2) }),
         gain: tt("flat_g"),
         ev: [
           [tt("flat_e1"), `≈ ${n(cp.fit.a)} °C`],

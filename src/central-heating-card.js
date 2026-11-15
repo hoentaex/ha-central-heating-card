@@ -26,10 +26,12 @@ import {
   taktDays,
   taktSummary,
 } from "./data.js";
-import { resolveEntities } from "./detect.js";
+import { detect, resolveEntities } from "./detect.js";
+import "./editor.js";
 import { flameSVG } from "./flame.js";
 import { num, onOff, readHeating, statusOf, vicareCurve } from "./heating.js";
 import { svgIcon } from "./icons.js";
+import "./popup.js";
 import { scrub } from "./scrub.js";
 import { DEFAULTS, esc, fmtNum, fmtTemp, fmtTime, langOf, modeLabel, SECTIONS, translator, VIEWS } from "./shared.js";
 import { TipStore } from "./store.js";
@@ -56,6 +58,12 @@ export const STATUS_COLOR = {
   idle: "var(--chc-sub)",
   offline: "var(--chc-warn)",
 };
+
+/** Config of a new card: the integration found in this installation. */
+export function stubConfig(hass) {
+  const found = detect(hass);
+  return { preset: found?.platform || "auto" };
+}
 
 class HeatingCardBase extends HTMLElement {
   constructor() {
@@ -200,8 +208,12 @@ class HeatingCardBase extends HTMLElement {
 }
 
 export class CentralHeatingCard extends HeatingCardBase {
-  static getStubConfig() {
-    return { type: "custom:central-heating-card", preset: "auto" };
+  static getConfigElement() {
+    return document.createElement("central-heating-card-editor");
+  }
+
+  static getStubConfig(hass) {
+    return { type: "custom:central-heating-card", ...stubConfig(hass) };
   }
 
   getCardSize() {
@@ -241,6 +253,8 @@ export class CentralHeatingCard extends HeatingCardBase {
       <div class="content">${body}</div>
     </ha-card>`;
     this._wireTips();
+    const close = this.shadowRoot.querySelector("[data-close]");
+    if (close) close.onclick = () => this.dispatchEvent(new CustomEvent("chc-close"));
     this._mountChart();
     this._mountCurve();
     this._mountDhw();
@@ -797,6 +811,7 @@ export class CentralHeatingCard extends HeatingCardBase {
       <div class="logo" style="--c:${color}">${flameSVG({ on: !!h.burner.on, level: h.burner.level, small: true, animate })}</div>
       <div class="titles"><div class="name">${esc(name)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>
       <span class="pill" style="--c:${pill.color}" title="${esc(pill.text)}"><span class="dot"></span><span><span class="pl">${esc(pill.text)}</span><span class="ps">${esc(pill.short)}</span></span></span>
+      ${this._config._dialog ? `<button type="button" class="zoom" data-close aria-label="${esc(t("close"))}">${svgIcon("close")}</button>` : ""}
     </div>`;
   }
 
@@ -881,12 +896,63 @@ export class CentralHeatingCard extends HeatingCardBase {
 
 /** One row: flame, name, status and the main temperatures. */
 export class CentralHeatingMiniCard extends HeatingCardBase {
-  static getStubConfig() {
-    return { type: "custom:central-heating-mini-card", preset: "auto" };
+  static getConfigElement() {
+    return document.createElement("central-heating-mini-card-editor");
+  }
+
+  static getStubConfig(hass) {
+    return { type: "custom:central-heating-mini-card", ...stubConfig(hass) };
+  }
+
+  constructor() {
+    super();
+    this._expanded = false;
+  }
+
+  setConfig(config) {
+    super.setConfig({ popup: true, ...config });
+    if (this._inline) this._inline.setConfig(this._mainConfig());
+  }
+
+  set hass(hass) {
+    super.hass = hass;
+    if (this._dialog?.isOpen) this._dialog.hass = hass;
+    if (this._inline) this._inline.hass = hass;
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  _mainConfig() {
+    const { popup, ...rest } = this._config;
+    return { ...rest, type: "custom:central-heating-card" };
+  }
+
+  _open(opener) {
+    const t = translator(langOf(this._hass, this._config));
+    if (this._config.popup === false) {
+      this._expanded = !this._expanded;
+      const box = this.shadowRoot.querySelector("[data-inline]");
+      if (this._expanded) {
+        this._inline = document.createElement("central-heating-card");
+        this._inline.setConfig(this._mainConfig());
+        this._inline.hass = this._hass;
+        box.append(this._inline);
+      } else {
+        box.replaceChildren();
+        this._inline = null;
+      }
+      this._render();
+      this.dispatchEvent(new Event("iron-resize", { bubbles: true, composed: true }));
+      return;
+    }
+    this._dialog = this._dialog || document.createElement("central-heating-dialog");
+    this._dialog.open({ config: this._mainConfig(), hass: this._hass, opener, label: this._config.name || t("title") });
   }
 
   getCardSize() {
-    return 1;
+    return this._expanded ? 12 : 1;
   }
 
   getGridOptions() {
@@ -906,7 +972,16 @@ export class CentralHeatingMiniCard extends HeatingCardBase {
     if (h.boiler.v !== null) parts.push(`${esc(t("boiler"))} <b>${fmtTemp(h.boiler.v, lang)} °C</b>`);
     if (h.dhw.v !== null) parts.push(`${esc(t("dhw_short"))} <b>${fmtTemp(h.dhw.v, lang)} °C</b>`);
     if (h.outdoor !== null) parts.push(`${esc(t("outdoor"))} <b>${fmtTemp(h.outdoor, lang)} °C</b>`);
-    this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card class="${animate ? "anim" : ""}">
+    const inline = this._config.popup === false;
+    const btn = `<button type="button" class="zoom" data-open ${inline ? `aria-expanded="${this._expanded}"` : 'aria-haspopup="dialog"'} aria-label="${esc(t("open"))}">${svgIcon(inline && this._expanded ? "collapse" : "expand")}</button>`;
+    if (!this.shadowRoot.firstChild) {
+      this.shadowRoot.innerHTML = `<style>${STYLE}</style><div class="wrap"><div data-row></div><div data-inline></div></div>`;
+      this.shadowRoot.addEventListener("click", (e) => {
+        const open = e.target.closest?.("[data-open]");
+        if (open) this._open(open);
+      });
+    }
+    this.shadowRoot.querySelector("[data-row]").innerHTML = `<ha-card class="${animate ? "anim" : ""}">
       <div class="mini">
         <div class="logo" style="--c:${color}">${flameSVG({ on: !!h.burner.on, level: h.burner.level, small: true, animate })}</div>
         <div class="mmain">
@@ -915,6 +990,7 @@ export class CentralHeatingMiniCard extends HeatingCardBase {
           <div class="mdetail">${parts.join(" · ")}</div>
         </div>
         ${this._spark(takt, pill.color)}
+        ${btn}
       </div>
     </ha-card>`;
     this._maybeLoad();

@@ -226,4 +226,11 @@ ha-card { overflow: hidden; container-type: inline-size; color: var(--chc-text);
 .mdetail { font-size: 13px; color: var(--chc-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
 .mdetail b { font-weight: 500; color: var(--chc-text); }
 @container (max-width: 300px) { .mini .pill { display: none; } }
+/* buttons: open (mini), close (dialog) */
+.zoom { flex: none; cursor: pointer; width: 40px; height: 40px; margin: -4px -8px -4px 0; padding: 0; border: 0; border-radius: 50%; background: transparent; display: grid; place-items: center; color: var(--chc-sub); }
+.zoom .icon { width: 20px; height: 20px; }
+.zoom:hover { background: color-mix(in srgb, var(--chc-sub) 16%, transparent); color: var(--chc-text); }
+.zoom:focus-visible { outline: 2px solid var(--chc-accent); outline-offset: 2px; }
+.wrap { display: flex; flex-direction: column; gap: 8px; }
+.mini .zoom { width: 44px; height: 44px; margin: 0; border-radius: 12px; background: var(--chc-tile); }
 `;
