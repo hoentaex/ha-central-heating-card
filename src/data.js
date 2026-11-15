@@ -106,27 +106,38 @@ export function burnerDays(points, windows, isOn, now = Date.now()) {
   return out;
 }
 
-/** Value of a counter at time `t`: the last numeric point at or before t (null if none). */
-const counterAt = (points, t) => {
-  let v = null;
-  for (const p of points) {
-    if (p.t > t) break;
-    const n = val(Number.parseFloat(p.s));
-    if (n !== null) v = n;
-  }
-  return v;
-};
-
-/** Increase of a counter per window (null without a value before or in the window; resets count as null). */
+/**
+ * Increase of a counter per window, robust against bogus readings. Wolf's cloud now and then reports a wrong value
+ * for a few minutes (seen: 327680 between 333890 and 333892). Each reading is checked against the last accepted one:
+ * it may not fall and may not rise by more than one start per elapsed minute (+5). A reading that fails is kept as a
+ * candidate; only if the next reading continues from the candidate (a real reset or a new boiler controller) does
+ * the count go on from there. Windows the readings cover but without increments get 0, others null.
+ */
 export function counterDays(points, windows) {
-  const first = points.find((p) => val(Number.parseFloat(p.s)) !== null);
-  return windows.map((w) => {
-    if (!first || first.t >= w.end.getTime()) return null;
-    const a = counterAt(points, w.start.getTime()) ?? val(Number.parseFloat(first.s));
-    const b = counterAt(points, w.end.getTime() - 1);
-    if (a === null || b === null || b < a) return null;
-    return b - a;
+  const nums = points.map((p) => ({ t: p.t, v: val(Number.parseFloat(p.s)) })).filter((p) => p.v !== null);
+  const out = windows.map(() => null);
+  if (!nums.length) return out;
+  const add = (t, d) =>
+    windows.forEach((w, k) => {
+      if (t >= w.start.getTime() && t < w.end.getTime()) out[k] = (out[k] ?? 0) + d;
+    });
+  const fits = (from, to) => to.v >= from.v && to.v - from.v <= (to.t - from.t) / 60e3 + 5;
+  let base = nums[0];
+  let candidate = null;
+  for (const p of nums.slice(1)) {
+    if (fits(base, p)) {
+      add(p.t, p.v - base.v);
+      base = p;
+      candidate = null;
+    } else if (candidate && fits(candidate, p)) {
+      base = p;
+      candidate = null;
+    } else candidate = p;
+  }
+  windows.forEach((w, k) => {
+    if (out[k] === null && nums[0].t < w.end.getTime() && nums.at(-1).t >= w.start.getTime()) out[k] = 0;
   });
+  return out;
 }
 
 /**

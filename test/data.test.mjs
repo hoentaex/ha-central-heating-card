@@ -65,7 +65,7 @@ test("burnerDays: runs split at midnight, the state at the window start is no st
   assert.equal(Math.round((d2.end - d2.start - b.covered) / H), 1); // the unavailable hour
 });
 
-test("counterDays: increase per day, baseline before the window, resets give null", () => {
+test("counterDays: increase per day, baseline before the window, unavailable skipped", () => {
   const [d1, d2] = dayWindows(NOW, TZ, 2);
   const m = d2.start.getTime();
   const pts = [
@@ -76,16 +76,42 @@ test("counterDays: increase per day, baseline before the window, resets give nul
     { t: m + 3 * H, s: "150" },
   ];
   assert.deepEqual(counterDays(pts, [d1, d2]), [30, 20]);
-  assert.deepEqual(
-    counterDays(
-      [
-        { t: m + H, s: "5" },
-        { t: m + 2 * H, s: "2" },
-      ],
-      [d1, d2],
-    ),
-    [null, null],
-  );
+  assert.deepEqual(counterDays([], [d1, d2]), [null, null]);
+});
+
+test("counterDays: a bogus Wolf reading (327680 between 333890 and 333892, Wolf 7.11.) is ignored", () => {
+  const [d1, d2] = dayWindows(NOW, TZ, 2);
+  const m = d2.start.getTime();
+  const min = 60e3;
+  const pts = [
+    { t: m - 60 * min, s: "333885" },
+    { t: m - 16 * min, s: "unavailable" },
+    { t: m - 14 * min, s: "333890" },
+    { t: m - 9 * min, s: "327680" },
+    { t: m + 1 * min, s: "333892" },
+    { t: m + 30 * min, s: "333896" },
+  ];
+  assert.deepEqual(counterDays(pts, [d1, d2]), [5, 6]);
+  // An implausible jump up is ignored as well (more starts than minutes passed).
+  const up = [
+    { t: m + 10 * min, s: "1000" },
+    { t: m + 20 * min, s: "9000" },
+    { t: m + 30 * min, s: "1003" },
+  ];
+  assert.deepEqual(counterDays(up, [d1, d2]), [null, 3]);
+});
+
+test("counterDays: a real reset (the new value persists) is followed after one reading", () => {
+  const [d1, d2] = dayWindows(NOW, TZ, 2);
+  const m = d2.start.getTime();
+  const pts = [
+    { t: m + H, s: "5000" },
+    { t: m + 2 * H, s: "5010" },
+    { t: m + 3 * H, s: "3" },
+    { t: m + 4 * H, s: "8" },
+    { t: m + 5 * H, s: "12" },
+  ];
+  assert.deepEqual(counterDays(pts, [d1, d2]), [null, 14]);
 });
 
 test("taktDays + summary: the simulated Wolf week gives ~88 starts a day at ~4.1 min (real values)", () => {

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.1.1 (2026-11-15)
+
+- **Fix:** cycling showed absurd numbers (Wolf: Ø 0,4 min, 982 starts a day, −347.000 starts/year). Wolf's cloud
+  now and then reports a bogus value of the starts counter for a few minutes (327680 between 333890 and 333892); the
+  card took the difference as starts. Readings that fall or rise faster than one start per minute are now skipped;
+  a new value is only followed when the next reading continues from it (real reset)
+
 ## 0.1.0 (2026-11-15)
 
 First release.
