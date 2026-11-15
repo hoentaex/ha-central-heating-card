@@ -50,7 +50,7 @@
         },
       );
       await import("../dist/ha-central-heating-card.js");
-      import { makeHass } from "./mock.js";
+      import { makeHass, setOnChange } from "./mock.js";
 
       const q = new URLSearchParams(location.search);
       const $ = (id) => document.getElementById(id);
@@ -98,6 +98,7 @@
       for (const k of ["burner", "dhw", "unavailable", "lang"]) ui[k].addEventListener("change", update);
       ui.house.addEventListener("change", build);
       ui.anim.addEventListener("change", build);
+      setOnChange(() => update());
       build();
       window.__demo = { update, build };
     </script>

@@ -32,13 +32,17 @@ import { num, onOff, readHeating, statusOf, vicareCurve } from "./heating.js";
 import { svgIcon } from "./icons.js";
 import { scrub } from "./scrub.js";
 import { DEFAULTS, esc, fmtNum, fmtTemp, fmtTime, langOf, modeLabel, SECTIONS, translator, VIEWS } from "./shared.js";
+import { TipStore } from "./store.js";
 import { STYLE } from "./styles.js";
 import { burnerDetail, targetLine } from "./texts.js";
+import { buildTips } from "./tips.js";
 import { tzOf } from "./tz.js";
 
 const VERSION = __VERSION__;
 // One cache for all cards on the page: the full card and the mini card share the recorder requests.
 const SHARED = new Cache();
+// Done / hidden tips, kept in Home Assistant's per-user data (shared by all cards on the page).
+const STORE = new TipStore();
 const RELOAD_MS = 5 * 60e3;
 
 /** Same on/off reading as the live state (Wolf "ein"/"aus", binary sensors "on"/"off"). */
@@ -88,6 +92,7 @@ class HeatingCardBase extends HTMLElement {
   }
 
   async _load() {
+    STORE.load(this._hass).then(() => this._render());
     const e = this._resolved.entities;
     const tz = tzOf(this._hass);
     const now = new Date();
@@ -223,6 +228,7 @@ export class CentralHeatingCard extends HeatingCardBase {
     const show = (s) => this._config.sections.includes(s);
     const body = Object.keys(x.e).length
       ? (show("now") ? this._nowSection(x) : "") +
+        (show("tips") ? this._tipsSection(x) : "") +
         (show("burner") && (x.e.burner || x.e.burner_hours) ? this._burnerSection(x) : "") +
         (show("curve") && x.e.flow_temp && x.e.outdoor ? this._panelSection("curve", "curve", x, true) : "") +
         (show("dhw") && x.e.dhw_temp ? this._panelSection("dhw", "drop", x) : "") +
@@ -234,6 +240,7 @@ export class CentralHeatingCard extends HeatingCardBase {
       ${show("header") ? this._header(x) : ""}
       <div class="content">${body}</div>
     </ha-card>`;
+    this._wireTips();
     this._mountChart();
     this._mountCurve();
     this._mountDhw();
@@ -389,6 +396,162 @@ export class CentralHeatingCard extends HeatingCardBase {
     $("extra").innerHTML = kpis.length ? `<div class="kpis">${kpis.join("")}</div>` : "";
     $("hint").textContent = d.charge || d.circ ? t("hint_dhw") : "";
     scrub(plot, view, $("readout"));
+  }
+
+  // ---------- optimisation tips ----------
+
+  /** Id of this heating in the tip store (the burner entity, else the platform). */
+  _heatingId() {
+    const e = this._resolved?.entities || {};
+    return this._config.tip_id || e.burner || e.boiler_temp || this._resolved?.platform || "heating";
+  }
+
+  _tipsSection(x) {
+    const d = this._data;
+    if (!d || d.error) return "";
+    const { t, lang, tz, e, h } = x;
+    const { tips, ok } = buildTips({
+      lang,
+      h,
+      e,
+      d,
+      curves: this._setCurves(e),
+      num: (id) => num(this._hass, id),
+      warn: Number(this._config.takt_warn_min) || 5,
+      good: Number(this._config.takt_good_min) || 10,
+      platform: this._resolved?.platform,
+    });
+    const id = this._heatingId();
+    this._tips = tips;
+    this._openTips = this._openTips || new Set();
+    this._confirm = this._confirm || new Set();
+    this._errors = this._errors || {};
+    const hidden = tips.filter((tip) => STORE.get(id, tip.id)?.hidden);
+    const shown = tips.filter((tip) => !STORE.get(id, tip.id)?.hidden);
+    const open = shown.filter((tip) => !STORE.get(id, tip.id)?.done).length;
+    const date = (iso) =>
+      new Date(iso).toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: tz,
+      });
+    const rows = shown
+      .map((tip) => {
+        const entry = STORE.get(id, tip.id);
+        const done = entry?.done;
+        const ev = tip.ev.map(([k, v]) => `<div><span>${esc(k)}</span><b>${esc(v)}</b></div>`).join("");
+        let act;
+        if (done) {
+          const parts = [t("done_on", { d: date(done) })];
+          if (entry.before) parts.push(t("done_before", { v: `${fmtNum(entry.before, lang, 2)} h/Kd` }));
+          const since = (d.days || []).filter((r) => !r.today && r.start >= new Date(done));
+          const after =
+            since.length >= 3 ? efficiency(since, Number(this._config.heating_base_temp) || 15).hoursPerHdd : null;
+          if (after !== null && entry.before) {
+            const pct = Math.round(((after - entry.before) / entry.before) * 100);
+            parts.push(t("done_after", { v: `${fmtNum(after, lang, 2)} h/Kd`, p: `${pct > 0 ? "+" : ""}${pct} %` }));
+          } else parts.push(t("done_wait", { d: date(new Date(new Date(done).getTime() + 7 * 864e5)) }));
+          act = `<div class="where">${esc(parts.join(" "))}</div>
+            <div class="act"><button type="button" class="btn" data-tip-act="undo" data-tip="${tip.id}">${esc(t("btn_undo"))}</button></div>`;
+        } else if (tip.action && this._confirm.has(tip.id)) {
+          const a = tip.action;
+          const q = t("confirm_q", {
+            label: a.label,
+            from: fmtNum(a.from, lang, a.from % 1 ? 1 : 0),
+            to: fmtNum(a.to, lang, a.to % 1 ? 1 : 0),
+            unit: a.unit,
+          });
+          act = `<div class="confirm"><span>${esc(q)}</span>
+              <button type="button" class="btn primary" data-tip-act="apply" data-tip="${tip.id}">${esc(t("btn_set"))}</button>
+              <button type="button" class="btn" data-tip-act="cancel" data-tip="${tip.id}">${esc(t("btn_cancel"))}</button></div>
+            <div class="where"><code>number.set_value</code> · <code>${esc(a.entity)}</code></div>`;
+        } else {
+          const a = tip.action;
+          act = `<div class="act">
+              ${a ? `<button type="button" class="btn primary" data-tip-act="ask" data-tip="${tip.id}">${esc(t("btn_apply", { label: a.label, to: fmtNum(a.to, lang, a.to % 1 ? 1 : 0), unit: a.unit }))}</button>` : ""}
+              <button type="button" class="btn" data-tip-act="done" data-tip="${tip.id}">${esc(t("btn_done"))}</button>
+              <button type="button" class="btn" data-tip-act="hide" data-tip="${tip.id}">${esc(t("btn_hide"))}</button></div>
+            ${tip.where ? `<div class="where">${esc(tip.where)}</div>` : ""}`;
+        }
+        const err = this._errors[tip.id]
+          ? `<div class="err">${esc(t("set_error", { e: this._errors[tip.id] }))}</div>`
+          : "";
+        return `<details class="tip ${done ? "done" : tip.sev}" data-tip="${tip.id}"${this._openTips.has(tip.id) || this._confirm.has(tip.id) ? " open" : ""}>
+          <summary><span class="sev"></span><span><div class="tt">${esc((done && entry.title) || tip.title)}</div><div class="ts">${esc(done ? t("done_short") : tip.short)}</div></span>
+            ${done ? `<span class="gain">✓</span>` : tip.gain ? `<span class="gain">${esc(tip.gain)}</span>` : "<span></span>"}${svgIcon("chev", "chev")}</summary>
+          <div class="body"><div class="ev">${ev}</div><div class="why">${esc(tip.why)}</div>
+            <ol>${tip.todo.map((s) => `<li>${esc(s)}</li>`).join("")}</ol>${act}${err}</div>
+        </details>`;
+      })
+      .join("");
+    const okRow = ok.length
+      ? `<div class="okrow"><span>${esc(t("tips_ok"))}</span>${ok.map((o) => `<span class="pump"><span class="dot"></span>${esc(o)}</span>`).join("")}</div>`
+      : "";
+    const hiddenRow = hidden.length
+      ? `<div class="okrow"><span>${esc(t("tips_hidden", { n: hidden.length }))}</span><button type="button" class="linkbtn" data-tip-act="unhide">${esc(t("tips_show"))}</button></div>`
+      : "";
+    return `<section>
+      <div class="section-title">${svgIcon("bulb")}<span>${esc(t("tips_title"))}</span><span class="note">${esc(shown.length ? t("tips_open", { n: open }) : t("tips_none"))}</span></div>
+      ${rows ? `<div class="tips">${rows}</div>` : ""}${okRow}${hiddenRow}
+      ${rows ? `<div class="hint" style="margin-top:8px">${esc(t("tips_hint"))}</div>` : ""}
+    </section>`;
+  }
+
+  /** Clicks in the tips section (delegated, wired once). */
+  _wireTips() {
+    if (this._tipsWired) return;
+    this._tipsWired = true;
+    this._openTips = this._openTips || new Set();
+    this._confirm = this._confirm || new Set();
+    this._errors = this._errors || {};
+    // Other cards on the page (and the dialog) change the same store.
+    STORE.onChange(() => this._render());
+    this.shadowRoot.addEventListener(
+      "toggle",
+      (ev) => {
+        const el = ev.target;
+        if (!el.matches?.("details.tip")) return;
+        if (el.open) this._openTips.add(el.dataset.tip);
+        else this._openTips.delete(el.dataset.tip);
+      },
+      true,
+    );
+    this.shadowRoot.addEventListener("click", async (ev) => {
+      const b = ev.target.closest?.("[data-tip-act]");
+      if (!b) return;
+      const act = b.dataset.tipAct;
+      const tipId = b.dataset.tip;
+      const id = this._heatingId();
+      const tip = this._tips?.find((x) => x.id === tipId);
+      const today = new Date().toISOString().slice(0, 10);
+      const before = this._data?.eff?.hoursPerHdd ?? null;
+      this._openTips.add(tipId);
+      if (act === "ask") this._confirm.add(tipId);
+      else if (act === "cancel") this._confirm.delete(tipId);
+      else if (act === "done") await STORE.set(this._hass, id, tipId, { done: today, before, title: tip?.title });
+      else if (act === "undo") await STORE.set(this._hass, id, tipId, null);
+      else if (act === "hide") await STORE.set(this._hass, id, tipId, { hidden: true });
+      else if (act === "unhide") {
+        for (const x of this._tips || []) if (STORE.get(id, x.id)?.hidden) await STORE.set(this._hass, id, x.id, null);
+      } else if (act === "apply" && tip?.action) {
+        b.disabled = true;
+        try {
+          await this._hass.callService("number", "set_value", { entity_id: tip.action.entity, value: tip.action.to });
+          delete this._errors[tipId];
+          this._confirm.delete(tipId);
+          await STORE.set(this._hass, id, tipId, {
+            done: today,
+            before,
+            title: tip.title,
+            set: { [tip.action.entity]: tip.action.to },
+          });
+        } catch (err) {
+          this._errors[tipId] = String(err?.message || err);
+        }
+      }
+      this._render();
+    });
   }
 
   _kpi(k, v, p = "", badge = "") {

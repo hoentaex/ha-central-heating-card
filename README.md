@@ -7,8 +7,8 @@
 **[Deutsch](#deutsch) · [English](#english)**
 
 > [!NOTE]
-> **In Arbeit.** Die Karte entsteht in Phasen; fertig sind „Jetzt“, Brenner, Heizkurve, Warmwasser, Solar,
-> Effizienz und Fußzeile. Optimierungs-Hinweise, Editor und Popup folgen.
+> **In Arbeit.** Die Karte entsteht in Phasen; fertig sind „Jetzt“, Optimierung, Brenner, Heizkurve, Warmwasser,
+> Solar, Effizienz und Fußzeile. Editor, Popup und Screenshots folgen.
 
 ---
 
@@ -27,6 +27,7 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
 > [!WARNING]
 > **Privates Hobbyprojekt.** Die Karte ist für meine eigene Installation entstanden und wird in der Freizeit gepflegt.
 > Es gibt keine Gewährleistung und keinen Support: **Die Nutzung erfolgt auf eigene Gefahr.**
+> Die Karte schaltet nur, wenn du bei einem Optimierungs-Hinweis „Setzen“ bestätigst (`number.set_value`).
 
 ### Was die Karte zeigt (Phase 1)
 
@@ -37,6 +38,12 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
   Vorlauf-Soll aus der eingestellten Heizkurve (Steigung, Niveau, Raum-Soll des aktiven Programms).
   Pumpen als Chips. Eine unplausible Raumtemperatur (unter 8 oder über 30 °C, z. B. Fühler am Kessel) wird
   durchgestrichen.
+- **Optimierung:** Hinweise aus festen Regeln – Takten, Warmwasser-Ladungen, Witterungsführung, Raum-Soll,
+  Niveau der Heizkurve, Zirkulation, Heizen bei Sommerwetter. Jeder Hinweis zeigt die auslösenden Zahlen, warum es
+  sich lohnt, konkrete Schritte und eine grobe Einsparung (Faustwerte). Wo die Integration den Wert schreiben kann
+  (Viessmann-`number`-Entitäten), setzt ein Knopf ihn nach einer Rückfrage. **Erledigt** merkt sich das Datum und
+  vergleicht danach Brennerstunden je Heizgradtag vorher/nachher, **Ausblenden** schaltet einen Hinweis stumm. Beides
+  liegt in den Benutzerdaten von Home Assistant und ist damit auf allen Geräten gleich.
 - **Brenner** in drei Ansichten, mit Finger oder Maus abfahrbar:
   - **Takt 7 Tage:** Starts je Tag und Ø Laufzeit je Start aus dem Verlauf (minutengenau), Balken in Ampelfarben
     (unter 5 min rot, 5–10 min gelb, darüber grün). Starts kommen vom Startzähler oder – ohne Zähler – aus den
@@ -67,7 +74,7 @@ outdoor_entity: sensor.wetter_aussentemperatur   # optional, ersetzt den Außenf
 entities:               # optional: einzelne Rollen überschreiben ("" blendet sie aus)
   room_temp: ""
 hide: [room]            # optional: boiler, flow, dhw, outdoor, room, pumps
-sections: [header, now, burner, curve, dhw, solar, efficiency, footer]
+sections: [header, now, tips, burner, curve, dhw, solar, efficiency, footer]
 fuel: oil               # oil | gas
 fuel_entity: sensor.oilfox_verbrauch_gesamt     # optional, Zähler in L bzw. m³ (total_increasing)
 kwh_per_unit: 10        # Energie je L bzw. m³ (für „ersetzt“ beim Solar)

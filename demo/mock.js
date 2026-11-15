@@ -4,6 +4,15 @@
 
 import { dayStart, parts, zoned } from "../src/tz.js";
 
+// Values set from the card (number.set_value) and the per-user frontend data, kept for the page's lifetime.
+export const SETS = {};
+const USER_DATA = {};
+let onSet = null;
+/** The demo page re-renders when the card sets a value. */
+export const setOnChange = (fn) => {
+  onSet = fn;
+};
+
 const W = "dev_wolf";
 const V = "dev_vicare";
 
@@ -205,7 +214,7 @@ export function makeHass({
   for (const [id, name, state, unit, attrs = {}, key] of rows) {
     states[id] = {
       entity_id: id,
-      state: unavailable ? "unavailable" : (over[id] ?? state),
+      state: unavailable ? "unavailable" : (over[id] ?? SETS[id] ?? state),
       attributes: { friendly_name: name, ...(unit ? { unit_of_measurement: unit } : {}), ...attrs },
       last_changed: changed,
       last_updated: updated,
@@ -219,6 +228,11 @@ export function makeHass({
     locale: { language: lang },
     config: { time_zone: "Europe/Berlin" },
     callWS: makeCallWS(house, () => now),
+    callService: async (domain, service, data) => {
+      if (domain !== "number" || service !== "set_value") throw new Error(`${domain}.${service} not in the demo`);
+      SETS[data.entity_id] = String(data.value);
+      setTimeout(() => onSet?.(), 0);
+    },
   };
 }
 
@@ -413,6 +427,11 @@ export function simulateStats(house, ids, period, now = new Date()) {
 export const makeCallWS =
   (house, now = () => new Date()) =>
   async (msg) => {
+    if (msg.type === "frontend/get_user_data") return { value: USER_DATA[msg.key] ?? null };
+    if (msg.type === "frontend/set_user_data") {
+      USER_DATA[msg.key] = msg.value;
+      return null;
+    }
     if (msg.type === "history/history_during_period") {
       const all = simulateHistory(house, now());
       return Object.fromEntries(msg.entity_ids.filter((id) => all[id]).map((id) => [id, all[id]]));

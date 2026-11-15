@@ -18,3 +18,8 @@
   degree day, share of burner stage 2 (Wolf), modulation while running (ViCare), fuel per burner hour and per degree
   day (optional `fuel_entity`), summer base load; footer: burner hours and starts with the mean running time, hours
   and starts since the last service (`maintenance_date`), how reachable the cloud was over 7 days
+- **Phase 5:** optimisation tips from fixed rules (short cycling, hot-water charges, weather compensation, room
+  target, heating-curve level, circulation, heating in summer weather), each with the numbers behind it, why it
+  matters, steps and a rough saving; "no findings" line. Where the integration can write the value (ViCare number
+  entities) a button sets it after a confirmation (`number.set_value`). Done / hidden tips are kept in Home
+  Assistant's per-user frontend data; done tips compare burner hours per heating degree day before and after
