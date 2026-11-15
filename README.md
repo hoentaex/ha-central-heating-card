@@ -7,8 +7,8 @@
 **[Deutsch](#deutsch) · [English](#english)**
 
 > [!NOTE]
-> **In Arbeit.** Die Karte entsteht in Phasen; Phase 1 (Gerüst, Erkennung, „Jetzt“, Mini-Karte) ist fertig.
-> Verlauf, Heizkurve, Warmwasser, Solar, Effizienz und Optimierungs-Hinweise folgen.
+> **In Arbeit.** Die Karte entsteht in Phasen; Phase 1 (Gerüst, Erkennung, „Jetzt“, Mini-Karte) und Phase 2
+> (Brenner: Takt, 30 Tage, 12 Monate) sind fertig. Heizkurve, Warmwasser, Solar, Effizienz und Hinweise folgen.
 
 ---
 
@@ -37,7 +37,14 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
   Vorlauf-Soll aus der eingestellten Heizkurve (Steigung, Niveau, Raum-Soll des aktiven Programms).
   Pumpen als Chips. Eine unplausible Raumtemperatur (unter 8 oder über 30 °C, z. B. Fühler am Kessel) wird
   durchgestrichen.
-- **Mini-Karte:** eine Zeile mit Flamme, Status, Kessel, Warmwasser und Außentemperatur.
+- **Brenner** in drei Ansichten, mit Finger oder Maus abfahrbar:
+  - **Takt 7 Tage:** Starts je Tag und Ø Laufzeit je Start aus dem Verlauf (minutengenau), Balken in Ampelfarben
+    (unter 5 min rot, 5–10 min gelb, darüber grün). Starts kommen vom Startzähler oder – ohne Zähler – aus den
+    Wechseln aus → an. Die Ampel steht auch im Kopf.
+  - **30 Tage:** Brennerstunden je Tag mit Außentemperatur, Stunden je Heizgradtag.
+  - **12 Monate:** Brennerstunden je Monat neben dem Vorjahresmonat, mit Starts und Laufzeit je Start.
+- **Mini-Karte:** eine Zeile mit Flamme, Takt-Ampel, Starts heute, Kessel, Warmwasser, Außentemperatur und einem
+  kleinen Balkendiagramm der Starts.
 
 ### Konfiguration
 
@@ -49,6 +56,11 @@ outdoor_entity: sensor.wetter_aussentemperatur   # optional, ersetzt den Außenf
 entities:               # optional: einzelne Rollen überschreiben ("" blendet sie aus)
   room_temp: ""
 hide: [room]            # optional: boiler, flow, dhw, outdoor, room, pumps
+sections: [header, now, burner]
+default_view: takt      # takt | days | months
+heating_base_temp: 15  # Heizgrenze für Heizgradtage
+takt_warn_min: 5        # Ampel: rot unter 5 min je Start
+takt_good_min: 10       # Ampel: grün ab 10 min je Start
 animations: true
 ```
 

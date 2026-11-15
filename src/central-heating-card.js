@@ -7,16 +7,27 @@
  *
  * Layout and look follow the cards of juju35 (https://github.com/juju35). MIT licence.
  */
+import { daysView, H, monthsView, taktView, W } from "./charts.js";
+import { Cache, fetchHistory, fetchStats, statDays, statMonths, taktClass, taktDays, taktSummary } from "./data.js";
 import { resolveEntities } from "./detect.js";
 import { flameSVG } from "./flame.js";
-import { readHeating, statusOf } from "./heating.js";
+import { onOff, readHeating, statusOf } from "./heating.js";
 import { svgIcon } from "./icons.js";
-import { DEFAULTS, esc, fmtTemp, fmtTime, langOf, modeLabel, SECTIONS, translator } from "./shared.js";
-import { burnerDetail, targetLine } from "./texts.js";
+import { scrub } from "./scrub.js";
+import { DEFAULTS, esc, fmtNum, fmtTemp, fmtTime, langOf, modeLabel, SECTIONS, translator, VIEWS } from "./shared.js";
 import { STYLE } from "./styles.js";
+import { burnerDetail, targetLine } from "./texts.js";
 import { tzOf } from "./tz.js";
 
 const VERSION = __VERSION__;
+// One cache for all cards on the page: the full card and the mini card share the recorder requests.
+const SHARED = new Cache();
+const RELOAD_MS = 5 * 60e3;
+
+/** Same on/off reading as the live state (Wolf "ein"/"aus", binary sensors "on"/"off"). */
+const isOn = (s) => onOff({ states: { x: { state: s } } }, "x");
+
+export const TAKT_COLOR = { warn: "var(--chc-warn)", mid: "var(--chc-mid)", good: "var(--chc-good)" };
 
 export const STATUS_COLOR = {
   running: "var(--chc-heat)",
@@ -38,7 +49,61 @@ class HeatingCardBase extends HTMLElement {
     this._config = { ...DEFAULTS, ...config, sections, hide: Array.isArray(config.hide) ? config.hide : [] };
     this._resolved = null;
     this._sig = "";
+    this._data = null;
+    this._loadedAt = 0;
     if (this._hass) this._render();
+  }
+
+  /** Whether this card needs the long-term statistics (the mini card only shows the cycling). */
+  _wantsStats() {
+    return false;
+  }
+
+  /** (Re)load the history (and statistics) on first use and then at most every five minutes. */
+  _maybeLoad() {
+    const e = this._resolved?.entities || {};
+    if (!e.burner && !e.burner_hours) return;
+    if (this._loading || (this._loadedAt && Date.now() - this._loadedAt < RELOAD_MS)) return;
+    this._loading = true;
+    this._load().finally(() => {
+      this._loading = false;
+    });
+  }
+
+  async _load() {
+    const e = this._resolved.entities;
+    const tz = tzOf(this._hass);
+    const now = new Date();
+    try {
+      const [hist, stats] = await Promise.all([
+        fetchHistory(this._hass, SHARED, e, tz, now),
+        this._wantsStats() ? fetchStats(this._hass, SHARED, e, tz, now).catch(() => null) : null,
+      ]);
+      const takt = taktDays(hist, e, isOn, tz, now);
+      this._data = {
+        takt,
+        summary: taktSummary(takt),
+        days: stats ? statDays(stats.days, e, tz, now) : null,
+        months: stats ? statMonths(stats.months, e, tz, now) : null,
+        error: null,
+      };
+    } catch (err) {
+      this._data = { takt: [], summary: null, days: null, months: null, error: String(err?.message || err) };
+    }
+    this._loadedAt = Date.now();
+    this._render();
+  }
+
+  /** Header pill: no connection, else the cycling rating (once loaded), else the live status. */
+  _pill({ t, lang, status, color }) {
+    const s = this._data?.summary;
+    if (status === "offline" || !s) return { text: t(`st_${status}`), short: t(`st_${status}`), color };
+    const c = taktClass(s.min, Number(this._config.takt_warn_min) || 5, Number(this._config.takt_good_min) || 10);
+    return {
+      text: t("takt_pill", { s: t(`takt_${c}`), v: fmtNum(s.min, lang, 1) }),
+      short: t(`takt_${c}`),
+      color: TAKT_COLOR[c],
+    };
   }
 
   set hass(hass) {
@@ -105,7 +170,16 @@ export class CentralHeatingCard extends HeatingCardBase {
   }
 
   getCardSize() {
-    return 5;
+    return 9;
+  }
+
+  _wantsStats() {
+    return this._config.sections.includes("burner");
+  }
+
+  setConfig(config) {
+    if (!VIEWS.includes(this._view)) this._view = VIEWS.includes(config?.default_view) ? config.default_view : "takt";
+    super.setConfig(config);
   }
 
   getGridOptions() {
@@ -118,24 +192,97 @@ export class CentralHeatingCard extends HeatingCardBase {
     const { t } = x;
     const show = (s) => this._config.sections.includes(s);
     const body = Object.keys(x.e).length
-      ? show("now")
-        ? this._nowSection(x)
-        : ""
+      ? (show("now") ? this._nowSection(x) : "") +
+        (show("burner") && (x.e.burner || x.e.burner_hours) ? this._burnerSection(x) : "")
       : `<div class="empty">${svgIcon("alert")}<span>${esc(t("no_entities"))}</span></div>`;
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card class="${x.animate ? "anim" : ""}">
       ${show("header") ? this._header(x) : ""}
       <div class="content">${body}</div>
     </ha-card>`;
+    this._mountChart();
+    this._maybeLoad();
+  }
+
+  _burnerSection({ t }) {
+    const btn = (v) =>
+      `<button type="button" data-view="${v}" aria-pressed="${this._view === v}">${esc(t(`v_${v}`))}</button>`;
+    return `<section>
+      <div class="section-title">${svgIcon("bars")}<span>${esc(t("burner"))}</span><span class="note" id="note"></span></div>
+      <div class="panel">
+        <div class="seg" role="group">${VIEWS.map(btn).join("")}</div>
+        <div class="readout" id="readout"></div>
+        <div class="plot" id="plot"></div>
+        <div class="axis" id="axis"></div>
+        <div class="legend" id="legend"></div>
+        <div id="extra"></div>
+        <div class="hint" id="hint"></div>
+      </div>
+    </section>`;
+  }
+
+  /** Fills the burner panel for the selected view and wires up the buttons and scrubbing. */
+  _mountChart() {
+    const root = this.shadowRoot;
+    const plot = root?.getElementById("plot");
+    if (!plot) return;
+    const { t, lang, tz } = this._ctx();
+    const $ = (id) => root.getElementById(id);
+    for (const b of root.querySelectorAll(".seg button")) {
+      b.setAttribute("aria-pressed", String(b.dataset.view === this._view));
+      b.onclick = () => {
+        this._view = b.dataset.view;
+        this._mountChart();
+      };
+    }
+    const empty = (msg) => {
+      $("readout").innerHTML = `<span class="v">–</span><span class="k">${esc(msg)}</span>`;
+      plot.innerHTML = "";
+      for (const id of ["axis", "legend", "hint", "note", "extra"]) $(id).innerHTML = "";
+    };
+    const d = this._data;
+    if (!d) return empty(t("loading"));
+    if (d.error) return empty(t("load_error", { e: d.error }));
+    const warn = Number(this._config.takt_warn_min) || 5;
+    const good = Number(this._config.takt_good_min) || 10;
+    let view;
+    if (this._view === "months") {
+      if (!d.months) return empty(t("no_stats"));
+      view = monthsView(d.months, { t, lang });
+    } else if (this._view === "days") {
+      if (!d.days) return empty(t("no_stats"));
+      view = daysView(d.days, { t, lang, tz, base: Number(this._config.heating_base_temp) || 15 });
+    } else {
+      view = taktView(d.takt, d.summary, { t, lang, tz, warn, good });
+      view.hint = t("hint_takt", { v: good });
+      view.extra = d.summary
+        ? `<div class="scale"><i></i><i></i><i></i><b style="left:${view.scale.toFixed(1)}%"></b></div>
+           <div class="scalelbl"><span>${esc(t("scale_warn", { v: warn }))}</span><span>${esc(t("scale_mid", { a: warn, b: good }))}</span><span>${esc(t("scale_good", { v: good }))}</span></div>`
+        : "";
+    }
+    const pos = (m) => `left:${((m.x / W) * 100).toFixed(2)}%;top:${((m.y / H) * 100).toFixed(2)}%`;
+    plot.innerHTML = `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${view.svg}</svg>
+      ${(view.marks || []).map((m) => `<div class="mark" style="${pos(m)}"></div>`).join("")}
+      <div class="hl" hidden></div>`;
+    $("readout").innerHTML = view.rest;
+    $("note").textContent = view.note || "";
+    $("axis").innerHTML = view.axis.map((a) => `<span>${esc(a)}</span>`).join("");
+    $("legend").innerHTML = view.legend
+      .map(([kind, color, txt]) => `<span><i class="sw ${kind}" style="--sw:${color}"></i>${esc(txt)}</span>`)
+      .join("");
+    $("extra").innerHTML = view.extra || "";
+    $("hint").textContent = view.hint || "";
+    scrub(plot, view, $("readout"));
   }
 
   _header(x) {
-    const { t, h, status, color, animate } = x;
+    const { t, h, color, animate } = x;
     const name = this._config.name || t("title");
     const sub = this._subtitle(x);
+    const pill = this._pill(x);
     return `<div class="header">
       <div class="logo" style="--c:${color}">${flameSVG({ on: !!h.burner.on, level: h.burner.level, small: true, animate })}</div>
       <div class="titles"><div class="name">${esc(name)}</div>${sub ? `<div class="sub">${esc(sub)}</div>` : ""}</div>
-      <span class="pill" style="--c:${color}"><span class="dot"></span><span>${esc(t(`st_${status}`))}</span></span>
+      <span class="pill" style="--c:${pill.color}" title="${esc(pill.text)}"><span class="dot"></span><span><span class="pl">${esc(pill.text)}</span><span class="ps">${esc(pill.short)}</span></span></span>
     </div>`;
   }
 
@@ -234,9 +381,14 @@ export class CentralHeatingMiniCard extends HeatingCardBase {
 
   _render() {
     if (!this._config || !this._hass) return;
-    const { t, h, status, color, lang, animate } = this._ctx();
+    const x = this._ctx();
+    const { t, h, color, lang, animate } = x;
     const name = this._config.name || t("title");
+    const pill = this._pill(x);
+    const takt = this._data?.takt || [];
+    const today = takt.at(-1);
     const parts = [];
+    if (today && today.starts !== null) parts.push(esc(t("starts_today", { n: fmtNum(today.starts, lang) })));
     if (h.boiler.v !== null) parts.push(`${esc(t("boiler"))} <b>${fmtTemp(h.boiler.v, lang)} °C</b>`);
     if (h.dhw.v !== null) parts.push(`${esc(t("dhw_short"))} <b>${fmtTemp(h.dhw.v, lang)} °C</b>`);
     if (h.outdoor !== null) parts.push(`${esc(t("outdoor"))} <b>${fmtTemp(h.outdoor, lang)} °C</b>`);
@@ -245,11 +397,27 @@ export class CentralHeatingMiniCard extends HeatingCardBase {
         <div class="logo" style="--c:${color}">${flameSVG({ on: !!h.burner.on, level: h.burner.level, small: true, animate })}</div>
         <div class="mmain">
           <div class="mtop"><span class="name">${esc(name)}</span>
-            <span class="pill" style="--c:${color}"><span class="dot"></span><span>${esc(t(`st_${status}`))}</span></span></div>
+            <span class="pill" style="--c:${pill.color}" title="${esc(pill.text)}"><span class="dot"></span><span>${esc(pill.short)}</span></span></div>
           <div class="mdetail">${parts.join(" · ")}</div>
         </div>
+        ${this._spark(takt, pill.color)}
       </div>
     </ha-card>`;
+    this._maybeLoad();
+  }
+
+  /** Starts per day as small bars, today last. */
+  _spark(takt, color) {
+    const v = takt.map((d) => d.starts ?? 0);
+    const max = Math.max(...v, 0);
+    if (!max) return "";
+    const bars = v
+      .map((n, i) => {
+        const h = Math.max(1, (n / max) * 32);
+        return `<rect${i === v.length - 1 ? ' class="last"' : ""} x="${i * 11}" y="${(34 - h).toFixed(1)}" width="7" height="${h.toFixed(1)}" rx="1.5"></rect>`;
+      })
+      .join("");
+    return `<svg class="spark" viewBox="0 0 ${v.length * 11 - 4} 34" style="--c:${color}" aria-hidden="true">${bars}</svg>`;
   }
 }
 

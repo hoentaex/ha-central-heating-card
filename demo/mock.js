@@ -2,6 +2,8 @@
 // registry and the state machine show them. Wolf SmartSet (`wolflink`), German entity ids, English
 // names. Viessmann ViCare (`vicare`), German names, number entities for the heating curve.
 
+import { dayStart, parts, zoned } from "../src/tz.js";
+
 const W = "dev_wolf";
 const V = "dev_vicare";
 
@@ -216,5 +218,124 @@ export function makeHass({
     language: lang,
     locale: { language: lang },
     config: { time_zone: "Europe/Berlin" },
+    callWS: makeCallWS(house, () => now),
   };
 }
+
+// ---------- recorder: history and long-term statistics (real numbers, 16.10.–15.11.2026) ----------
+
+const TZ = "Europe/Berlin";
+
+/** Per house: the last 7 finished days (starts, flame hours), today's pace, 31 days of statistics, 13 months. */
+export const RECORDER = {
+  wolf: {
+    burner: "sensor.flamme",
+    on: "ein",
+    off: "aus",
+    counter: "sensor.brennerstarts",
+    counterEnd: 334624,
+    takt: { starts: [85, 96, 110, 88, 81, 85, 73], hours: [5.23, 6.53, 6.69, 8.58, 4.57, 5.9, 5.1], today: [81, 5.17] },
+    days: {
+      "sensor.brennerbetriebsstunden": [
+        1, 2, 1, 2, 4, 4, 4, 6, 3, 3, 3, 1, 2, 4, 4, 0, 7, 4, 4, 2, 4, 3, 3, 8, 7, 7, 8, 5, 6, 5, 5,
+      ],
+      "sensor.aussentemperatur": [
+        12.8, 11.5, 11.2, 10.5, 9.0, 9.4, 10.3, 9.3, 9.0, 8.9, 7.6, 11.8, 9.7, 4.6, 7.4, 2.3, 8.3, 7.1, 7.2, 7.5, 6.0,
+        4.1, 4.7, 8.5, 6.6, 5.6, 7.8, 9.4, 3.4, 2.3, 2.1,
+      ],
+    },
+    months: {
+      "sensor.brennerbetriebsstunden": [null, null, null, null, null, null, null, null, 4, 6, 13, 59, 78],
+      "sensor.aussentemperatur": [null, null, null, null, null, null, null, null, 22.8, 20.8, 16.2, 10.1, 6.0],
+    },
+  },
+  viessmann: {
+    burner: "binary_sensor.vicare_burner_active",
+    on: "on",
+    off: "off",
+    counter: "sensor.vicare_burner_starts",
+    counterEnd: 80031,
+    takt: { starts: [36, 41, 40, 45, 44, 39, 32], hours: [6, 8, 8, 8, 7, 6, 6], today: [42, 8.34] },
+    days: {
+      "sensor.vicare_burner_hours": [
+        2, 4, 5, 3, 4, 5, 3, 7, 3, 7, 5, 3, 5, 6, 5, 7, 5, 7, 7, 5, 5, 4, 7, 6, 8, 8, 8, 7, 6, 6, 8,
+      ],
+      "sensor.vicare_burner_starts": [
+        7, 20, 34, 17, 21, 37, 22, 42, 20, 52, 31, 17, 33, 34, 28, 45, 30, 43, 42, 29, 23, 26, 40, 36, 41, 40, 45, 44,
+        39, 32, 39,
+      ],
+      "sensor.vicare_outside_temperature": [
+        11.8, 11.8, 11.0, 10.5, 8.8, 9.7, 9.4, 8.6, 9.5, 8.6, 8.6, 10.4, 9.1, 6.6, 7.7, 8.2, 7.9, 6.8, 7.1, 7.0, 5.5,
+        3.1, 5.9, 7.5, 6.4, 6.1, 8.4, 10.0, 3.9, 1.6, 2.9,
+      ],
+    },
+    months: {
+      "sensor.vicare_burner_hours": [228, 279, 365, 323, 160, 104, 53, 19, 13, 16, 29, 91, 97],
+      "sensor.vicare_burner_starts": [1118, 1118, 1128, 1155, 914, 490, 167, 67, 44, 54, 168, 550, 549],
+      "sensor.vicare_outside_temperature": [5.4, 3.6, 0.6, 5.3, 7.2, 11.4, 17.3, 22.8, 23.0, 22.4, 16.6, 11.2, 6.0],
+    },
+  },
+};
+
+/** Burner and counter history: evenly spread runs per day (deterministic jitter), oldest first. */
+export function simulateHistory(house, now = new Date()) {
+  const r = RECORDER[house];
+  const days = [...r.takt.starts.map((n, i) => [n, r.takt.hours[i]])];
+  const t0 = dayStart(now, TZ, 0).getTime();
+  const frac = (now.getTime() - t0) / 864e5;
+  days.push([Math.round(r.takt.today[0] * frac), r.takt.today[1] * frac]);
+  const burner = [];
+  const starts = [];
+  let total = r.counterEnd - days.reduce((s, [n]) => s + n, 0);
+  const begin = dayStart(now, TZ, -(days.length - 1)).getTime();
+  burner.push({ s: r.off, lu: (begin - 3600e3) / 1000 });
+  starts.push({ s: String(total), lu: (begin - 3600e3) / 1000 });
+  days.forEach(([n, h], d) => {
+    const start = begin + d * 864e5;
+    const len = d === days.length - 1 ? now.getTime() - start : 864e5;
+    const run = n ? (h * 3600e3) / n : 0;
+    for (let k = 0; k < n; k++) {
+      const jitter = Math.sin((d + 1) * (k + 3) * 12.9898) * 0.3;
+      const at = start + ((k + 0.5 + jitter) / n) * len - run / 2;
+      total += 1;
+      burner.push({ s: r.on, lu: at / 1000 }, { s: r.off, lu: (at + run) / 1000 });
+      starts.push({ s: String(total), lu: (at + 5e3) / 1000 });
+    }
+  });
+  return { [r.burner]: burner, [r.counter]: starts };
+}
+
+/** Statistics rows for the requested ids and period, aligned so that the last value is today / this month. */
+export function simulateStats(house, ids, period, now = new Date()) {
+  const r = RECORDER[house];
+  const src = period === "month" ? r.months : r.days;
+  const p = parts(now.getTime(), TZ);
+  const out = {};
+  for (const id of ids) {
+    const vals = src[id];
+    if (!vals) continue;
+    const n = vals.length;
+    out[id] = vals
+      .map((v, i) => {
+        const back = n - 1 - i;
+        const start = period === "month" ? zoned(p.y, p.m - back, 1, 0, TZ) : dayStart(now, TZ, -back);
+        if (v === null) return null;
+        return id.includes("temp") ? { start: start.getTime(), mean: v } : { start: start.getTime(), change: v };
+      })
+      .filter(Boolean);
+  }
+  return out;
+}
+
+/** callWS for the demo: history and statistics of one house. */
+export const makeCallWS =
+  (house, now = () => new Date()) =>
+  async (msg) => {
+    if (msg.type === "history/history_during_period") {
+      const all = simulateHistory(house, now());
+      return Object.fromEntries(msg.entity_ids.filter((id) => all[id]).map((id) => [id, all[id]]));
+    }
+    if (msg.type === "recorder/statistics_during_period")
+      return simulateStats(house, msg.statistic_ids, msg.period, now());
+    throw new Error(`unknown ${msg.type}`);
+  };

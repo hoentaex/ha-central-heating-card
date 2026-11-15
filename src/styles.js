@@ -30,6 +30,8 @@ ha-card { overflow: hidden; container-type: inline-size; color: var(--chc-text);
 .sub { font-size: 12px; color: var(--chc-sub); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pill { flex: 0 1 auto; min-width: 0; max-width: 55%; overflow: hidden; display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 12px; font-size: 12px; font-weight: 500; white-space: nowrap; background: color-mix(in srgb, var(--c) 15%, transparent); color: color-mix(in srgb, var(--c) 62%, var(--chc-text)); }
 .pill > span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.pill .ps { display: none; }
+@container (max-width: 420px) { .pill .pl { display: none; } .pill .ps { display: inline; } }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: none; display: inline-block; }
 
 .content { padding: 4px 16px 16px; display: flex; flex-direction: column; gap: 20px; }
@@ -69,6 +71,55 @@ ha-card { overflow: hidden; container-type: inline-size; color: var(--chc-text);
   .burner { flex-direction: row; justify-content: flex-start; text-align: left; gap: 12px; }
   .burner .fire { width: 40px; height: 52px; }
 }
+
+/* burner panel */
+.panel { border-radius: 12px; padding: 14px 16px; background: var(--chc-tile); display: flex; flex-direction: column; gap: 10px; }
+.seg { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; border-radius: 14px; background: color-mix(in srgb, var(--chc-text) 5%, transparent); }
+.seg button { font: inherit; color: inherit; font-size: 13px; font-weight: 500; border: 0; border-radius: 10px; min-height: 36px; cursor: pointer; padding: 0 6px; background: transparent; }
+.seg button:hover:not([aria-pressed="true"]) { background: color-mix(in srgb, var(--chc-text) 8%, transparent); }
+.seg button[aria-pressed="true"] { background: var(--chc-heat); color: #1d0e06; }
+.seg button:focus-visible { outline: 2px solid var(--chc-accent); outline-offset: 2px; }
+/* Always exactly two lines (value, then details) so nothing jumps while scrubbing. */
+.readout { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; height: 50px; min-width: 0; }
+.readout > span { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.readout .v { font-size: 24px; font-weight: 500; line-height: 1.2; }
+.readout .v small { font-size: 13px; color: var(--chc-sub); font-weight: 400; margin-left: 4px; }
+.readout .k { font-size: 12px; color: var(--chc-sub); }
+.plot { position: relative; height: 150px; touch-action: pan-y; cursor: crosshair; }
+.plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.plot .grid { stroke: var(--chc-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.plot .bar { fill: color-mix(in srgb, var(--chc-sub) 40%, transparent); }
+.plot .bar.heat { fill: color-mix(in srgb, var(--chc-heat) 75%, transparent); }
+.plot .bar.warn { fill: color-mix(in srgb, var(--chc-warn) 55%, transparent); }
+.plot .bar.mid { fill: color-mix(in srgb, var(--chc-mid) 55%, transparent); }
+.plot .bar.good { fill: color-mix(in srgb, var(--chc-good) 55%, transparent); }
+.plot .bar.partial { fill-opacity: .5; }
+.plot .bar.prev { fill: color-mix(in srgb, var(--chc-sub) 40%, transparent); }
+.plot polyline { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.plot .run { stroke: var(--chc-text); }
+.plot .temp { stroke: var(--chc-temp); stroke-dasharray: 3 3; }
+.plot .mark { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; box-sizing: border-box; pointer-events: none; background: var(--chc-card); border: 2px solid var(--chc-text); }
+.plot .hl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--chc-sub); pointer-events: none; }
+.axis { display: flex; justify-content: space-between; font-size: 11px; color: var(--chc-sub); font-variant-numeric: tabular-nums; min-height: 14px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12px; color: var(--chc-sub); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; flex: none; }
+.sw.bar { width: 12px; height: 12px; border-radius: 3px; background: var(--sw); }
+.sw.line { width: 16px; height: 2px; border-radius: 1px; background: var(--sw); }
+.sw.dash { width: 16px; height: 0; border-top: 2px dashed var(--sw); }
+.scale { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 3px; height: 8px; position: relative; margin-top: 2px; }
+.scale i { border-radius: 4px; }
+.scale i:nth-child(1) { background: color-mix(in srgb, var(--chc-warn) 55%, transparent); }
+.scale i:nth-child(2) { background: color-mix(in srgb, var(--chc-mid) 55%, transparent); }
+.scale i:nth-child(3) { background: color-mix(in srgb, var(--chc-good) 55%, transparent); }
+.scale b { position: absolute; top: -4px; bottom: -4px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--chc-text); }
+.scalelbl { display: grid; grid-template-columns: 1fr 1fr 1fr; font-size: 11px; color: var(--chc-sub); }
+.scalelbl span:nth-child(2) { text-align: center; }
+.scalelbl span:nth-child(3) { text-align: right; }
+.spark { width: 84px; height: 34px; flex: none; }
+.spark rect { fill: color-mix(in srgb, var(--c) 45%, transparent); }
+.spark rect.last { fill: var(--c); }
+@container (max-width: 380px) { .spark { display: none; } }
 
 /* flame */
 .fire { width: 58px; height: 76px; overflow: visible; flex: none; }
