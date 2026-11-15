@@ -60,6 +60,11 @@
       if (q.get("burner") === "0") ui.burner.checked = false;
 
       const NAMES = { wolf: "Heizung Wolf", viessmann: "Heizung Viessmann" };
+      // What the real dashboards configure on top of the detection.
+      const EXTRA = {
+        wolf: { fuel_entity: "sensor.oilfox_of0000000000_usagecounterquantity", maintenance_date: "2026-04-15" },
+        viessmann: { maintenance_date: "2026-03-20" },
+      };
       const cards = [];
       const build = () => {
         cards.length = 0;
@@ -68,7 +73,12 @@
           el.replaceChildren();
           for (const type of ["central-heating-card", "central-heating-mini-card"]) {
             const card = document.createElement(type);
-            card.setConfig({ type: `custom:${type}`, name: NAMES[ui.house.value], animations: ui.anim.checked });
+            card.setConfig({
+              type: `custom:${type}`,
+              name: NAMES[ui.house.value],
+              animations: ui.anim.checked,
+              ...EXTRA[ui.house.value],
+            });
             el.append(card);
             cards.push(card);
           }

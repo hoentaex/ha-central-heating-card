@@ -139,6 +139,7 @@ export function resolveEntities(hass, config) {
   const found = detect(hass, config.preset || "auto");
   const entities = { ...(found?.entities || {}), ...(config.entities || {}) };
   if (config.outdoor_entity) entities.outdoor = config.outdoor_entity;
+  if (config.fuel_entity) entities.fuel = config.fuel_entity;
   for (const [k, v] of Object.entries(entities)) if (!v) delete entities[k];
   return {
     platform: found?.platform || config.preset || "",

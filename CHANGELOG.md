@@ -13,3 +13,8 @@
   hot-water-priority hours found from the data, trend line; ViCare: the set curves for the normal and reduced
   program from slope, level and room targets); hot water: cylinder over 48 hours against the target, charges per
   day and circulation hours per day from the pumps' history
+- **Phase 4:** solar (ViCare): yield per day over 30 days, collector and cylinder now, solar pump hours, 12-month
+  yield with the best month and the fuel it replaced; efficiency over 30 days: burner hours and starts per heating
+  degree day, share of burner stage 2 (Wolf), modulation while running (ViCare), fuel per burner hour and per degree
+  day (optional `fuel_entity`), summer base load; footer: burner hours and starts with the mean running time, hours
+  and starts since the last service (`maintenance_date`), how reachable the cloud was over 7 days

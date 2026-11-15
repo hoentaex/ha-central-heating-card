@@ -251,10 +251,18 @@ export const RECORDER = {
       ],
     },
     pumps: { "sensor.ladepumpe": [6, 10.3] },
+    outages: true,
+    maintenance: { "sensor.brennerbetriebsstunden": 19123, "sensor.brennerstarts": 301240 },
     takt: { starts: [85, 96, 110, 88, 81, 85, 73], hours: [5.23, 6.53, 6.69, 8.58, 4.57, 5.9, 5.1], today: [81, 5.17] },
     days: {
       "sensor.brennerbetriebsstunden": [
         1, 2, 1, 2, 4, 4, 4, 6, 3, 3, 3, 1, 2, 4, 4, 0, 7, 4, 4, 2, 4, 3, 3, 8, 7, 7, 8, 5, 6, 5, 5,
+      ],
+      "sensor.brennerbetriebsstunden_2_brennerstufe": [
+        0, 1, 0, 1, 1, 1, 1, 1, 1, 1, 0, 1, 1, 1, 1, 0, 2, 1, 1, 1, 1, 0, 1, 2, 1, 2, 1, 1, 2, 1, 2,
+      ],
+      "sensor.oilfox_of0000000000_usagecounterquantity": [
+        3, 2, 1, 2, 5, 7, 4, 8, 3, 4, 2, 3, 2, 4, 5, 5, 4, 4, 6, 3, 6, 2, 5, 8, 6, 9, 12, 3, 10, 0, 18,
       ],
       "sensor.aussentemperatur": [
         12.8, 11.5, 11.2, 10.5, 9.0, 9.4, 10.3, 9.3, 9.0, 8.9, 7.6, 11.8, 9.7, 4.6, 7.4, 2.3, 8.3, 7.1, 7.2, 7.5, 6.0,
@@ -292,7 +300,9 @@ export const RECORDER = {
     pumps: {
       "binary_sensor.vicare_dhw_charging_active": [1, 14],
       "binary_sensor.vicare_dhw_circulation_pump_active": [115, 5],
+      "binary_sensor.vicare_solar_pump_active": [1, 132],
     },
+    maintenance: { "sensor.vicare_burner_hours": 16033, "sensor.vicare_burner_starts": 76012 },
     takt: { starts: [36, 41, 40, 45, 44, 39, 32], hours: [6, 8, 8, 8, 7, 6, 6], today: [42, 8.34] },
     days: {
       "sensor.vicare_burner_hours": [
@@ -302,6 +312,14 @@ export const RECORDER = {
         7, 20, 34, 17, 21, 37, 22, 42, 20, 52, 31, 17, 33, 34, 28, 45, 30, 43, 42, 29, 23, 26, 40, 36, 41, 40, 45, 44,
         39, 32, 39,
       ],
+      "sensor.vicare_burner_modulation": [
+        3.9, 8.1, 9.6, 5.8, 6.0, 9.8, 6.7, 12.4, 7.4, 14.3, 10.4, 5.6, 9.3, 10.8, 9.9, 13.3, 9.7, 13.9, 14.1, 9.9, 8.1,
+        8.9, 13.7, 11.7, 14.9, 14.1, 15.3, 13.1, 12.9, 11.1, 17.1,
+      ],
+      "sensor.vicare_solar_energy_production_today": [
+        24.2, 0, 0, 32.8, 17.8, 0, 16.0, 0.5, 7.2, 0, 13.2, 31.7, 1.4, 5.2, 19.5, 0, 14.2, 0, 0, 20.4, 31.6, 29.3, 0,
+        11.1, 0, 0.2, 0, 0, 11.4, 28.1, 3.4,
+      ],
       "sensor.vicare_outside_temperature": [
         11.8, 11.8, 11.0, 10.5, 8.8, 9.7, 9.4, 8.6, 9.5, 8.6, 8.6, 10.4, 9.1, 6.6, 7.7, 8.2, 7.9, 6.8, 7.1, 7.0, 5.5,
         3.1, 5.9, 7.5, 6.4, 6.1, 8.4, 10.0, 3.9, 1.6, 2.9,
@@ -310,6 +328,9 @@ export const RECORDER = {
     months: {
       "sensor.vicare_burner_hours": [228, 279, 365, 323, 160, 104, 53, 19, 13, 16, 29, 91, 97],
       "sensor.vicare_burner_starts": [1118, 1118, 1128, 1155, 914, 490, 167, 67, 44, 54, 168, 550, 549],
+      "sensor.vicare_solar_energy_production_today": [
+        184, 179, 188, 109, 740, 1000, 1243, 1339, 1533, 1335, 957, 471, 150,
+      ],
       "sensor.vicare_outside_temperature": [5.4, 3.6, 0.6, 5.3, 7.2, 11.4, 17.3, 22.8, 23.0, 22.4, 16.6, 11.2, 6.0],
     },
   },
@@ -337,6 +358,8 @@ export function simulateHistory(house, now = new Date()) {
       const at = start + ((k + 0.5 + jitter) / n) * len - run / 2;
       total += 1;
       burner.push({ s: r.on, lu: at / 1000 }, { s: r.off, lu: (at + run) / 1000 });
+      if (r.outages && k % 12 === 5)
+        burner.push({ s: "unavailable", lu: (at + run + 20e3) / 1000 }, { s: r.off, lu: (at + run + 3 * 60e3) / 1000 });
       starts.push({ s: String(total), lu: (at + 5e3) / 1000 });
     }
   });
@@ -377,7 +400,7 @@ export function simulateStats(house, ids, period, now = new Date()) {
               ? new Date((Math.floor(now.getTime() / 3600e3) - 1 - back) * 3600e3)
               : dayStart(now, TZ, -back);
         if (v === null) return null;
-        return period === "hour" || id.includes("temp")
+        return period === "hour" || id.includes("temp") || id.includes("modulation")
           ? { start: start.getTime(), mean: v }
           : { start: start.getTime(), change: v };
       })
@@ -393,6 +416,14 @@ export const makeCallWS =
     if (msg.type === "history/history_during_period") {
       const all = simulateHistory(house, now());
       return Object.fromEntries(msg.entity_ids.filter((id) => all[id]).map((id) => [id, all[id]]));
+    }
+    if (msg.type === "recorder/statistics_during_period" && msg.types?.includes("state")) {
+      const m = RECORDER[house].maintenance || {};
+      return Object.fromEntries(
+        msg.statistic_ids
+          .filter((id) => id in m)
+          .map((id) => [id, [{ start: Date.parse(msg.start_time), state: m[id] }]]),
+      );
     }
     if (msg.type === "recorder/statistics_during_period")
       return simulateStats(house, msg.statistic_ids, msg.period, now());

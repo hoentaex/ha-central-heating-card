@@ -324,3 +324,39 @@ export function dhwView(rows, target, { t, lang, tz }) {
     ],
   };
 }
+
+/** Solar: yield per day over 30 days (kWh), today lighter. */
+export function solarView(days, today, { t, lang, tz }) {
+  const n = days.length;
+  const bw = W / n;
+  const yMax = niceMax(Math.max(...days.map((d) => d.solar ?? 0)), 10);
+  const y = (v) => H - (v / yMax) * (H - 8);
+  let svg = grid([y(yMax / 2), y(yMax)]);
+  days.forEach((d, i) => {
+    if (d.solar) svg += rect(`bar solar${d.today ? " partial" : ""}`, i * bw + bw * 0.18, bw * 0.64, y(d.solar));
+  });
+  const sum = days.reduce((s, d) => s + (d.solar ?? 0), 0);
+  const sunny = days.filter((d) => (d.solar ?? 0) > 1).length;
+  const rest = readout(
+    big(fmtNum(today, lang, 1), t("kwh_today")),
+    `${t("kwh_in_days", { v: fmtNum(sum, lang), n })} · ${t("sunny_days", { n: sunny })}`,
+  );
+  const at = (i) => {
+    const d = days[i];
+    return readout(
+      d.solar === null ? "–" : big(fmtNum(d.solar, lang, 1), "kWh"),
+      d.today ? t("today_so_far") : dayLabel(d.start, lang, tz),
+    );
+  };
+  const step = Math.round(n / 3);
+  return {
+    svg,
+    n,
+    at,
+    rest,
+    axis: [...new Set([0, step, 2 * step, n - 1].map((i) => Math.min(n - 1, i)))].map((i) =>
+      i === n - 1 ? t("today_short") : shortDate(days[i].start, lang, tz),
+    ),
+    legend: [["bar", "var(--chc-solar)", t("lg_solar")]],
+  };
+}

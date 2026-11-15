@@ -7,8 +7,8 @@
 **[Deutsch](#deutsch) · [English](#english)**
 
 > [!NOTE]
-> **In Arbeit.** Die Karte entsteht in Phasen; fertig sind „Jetzt“, Brenner (Takt, 30 Tage, 12 Monate), Heizkurve
-> und Warmwasser. Solar, Effizienz und Optimierungs-Hinweise folgen.
+> **In Arbeit.** Die Karte entsteht in Phasen; fertig sind „Jetzt“, Brenner, Heizkurve, Warmwasser, Solar,
+> Effizienz und Fußzeile. Optimierungs-Hinweise, Editor und Popup folgen.
 
 ---
 
@@ -48,6 +48,12 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
   „K je 1 K kälter“. Bei Viessmann zusätzlich die eingestellten Soll-Kurven (normal und reduziert).
 - **Warmwasser** (letzte 48 h): Speichertemperatur gegen Soll, Ladungen je Tag mit Dauer und Zirkulationsstunden je
   Tag aus dem Verlauf der Pumpen.
+- **Solar** (nur Viessmann): Ertrag je Tag über 30 Tage, Kollektor- und Speichertemperatur, Laufzeit der
+  Solarpumpe, Ertrag der letzten 12 Monate mit bestem Monat und dem ersetzten Brennstoff.
+- **Effizienz** (30 Tage): Brennerstunden und Starts je Heizgradtag, Anteil der 2. Brennerstufe (Wolf), Modulation
+  im Betrieb (Viessmann), Brennstoff je Brennerstunde und je Heizgradtag (mit `fuel_entity`), Sommer-Grundlast.
+- **Fußzeile:** Brennerstunden und Starts mit Ø Laufzeit je Start, Stunden und Starts seit der letzten Wartung
+  (`maintenance_date`), Erreichbarkeit der Hersteller-Cloud über 7 Tage.
 - **Mini-Karte:** eine Zeile mit Flamme, Takt-Ampel, Starts heute, Kessel, Warmwasser, Außentemperatur und einem
   kleinen Balkendiagramm der Starts.
 
@@ -61,7 +67,12 @@ outdoor_entity: sensor.wetter_aussentemperatur   # optional, ersetzt den Außenf
 entities:               # optional: einzelne Rollen überschreiben ("" blendet sie aus)
   room_temp: ""
 hide: [room]            # optional: boiler, flow, dhw, outdoor, room, pumps
-sections: [header, now, burner, curve, dhw]
+sections: [header, now, burner, curve, dhw, solar, efficiency, footer]
+fuel: oil               # oil | gas
+fuel_entity: sensor.oilfox_verbrauch_gesamt     # optional, Zähler in L bzw. m³ (total_increasing)
+kwh_per_unit: 10        # Energie je L bzw. m³ (für „ersetzt“ beim Solar)
+boiler_efficiency: 0.85
+maintenance_date: "2026-04-15"   # optional, letzte Wartung
 default_view: takt      # takt | days | months
 heating_base_temp: 15  # Heizgrenze für Heizgradtage
 takt_warn_min: 5        # Ampel: rot unter 5 min je Start

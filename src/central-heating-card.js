@@ -7,10 +7,13 @@
  *
  * Layout and look follow the cards of juju35 (https://github.com/juju35). MIT licence.
  */
-import { CH, curveView, daysView, dhwView, H, monthsView, taktView, W } from "./charts.js";
+import { CH, curveView, daysView, dhwView, H, monthsView, solarView, taktView, W } from "./charts.js";
 import {
+  availability,
   Cache,
   curvePoints,
+  efficiency,
+  fetchMaintenance,
   fetchHistory,
   fetchHourly,
   fetchStats,
@@ -18,6 +21,7 @@ import {
   pumpSummary,
   statDays,
   statMonths,
+  summerLoad,
   taktClass,
   taktDays,
   taktSummary,
@@ -88,10 +92,13 @@ class HeatingCardBase extends HTMLElement {
     const tz = tzOf(this._hass);
     const now = new Date();
     try {
-      const [hist, stats, hourly] = await Promise.all([
+      const [hist, stats, hourly, maint] = await Promise.all([
         fetchHistory(this._hass, SHARED, e, tz, now),
         this._wantsStats() ? fetchStats(this._hass, SHARED, e, tz, now).catch(() => null) : null,
         this._wantsStats() ? fetchHourly(this._hass, SHARED, e, now).catch(() => null) : null,
+        this._wantsStats() && this._config.maintenance_date
+          ? fetchMaintenance(this._hass, SHARED, e, this._config.maintenance_date, tz).catch(() => null)
+          : null,
       ]);
       const takt = taktDays(hist, e, isOn, tz, now);
       this._data = {
@@ -102,8 +109,14 @@ class HeatingCardBase extends HTMLElement {
         hours: hourly ? hourRows(hourly, e, now) : null,
         charge: pumpSummary(hist, e.pump_dhw_charge, isOn, tz, now),
         circ: pumpSummary(hist, e.pump_dhw_circ, isOn, tz, now),
+        solarPump: pumpSummary(hist, e.pump_solar, isOn, tz, now),
+        avail: e.burner ? availability(hist, e.burner, tz, now) : null,
+        maint,
         error: null,
       };
+      const base = Number(this._config.heating_base_temp) || 15;
+      this._data.eff = this._data.days ? efficiency(this._data.days, base) : null;
+      this._data.summer = this._data.months ? summerLoad(this._data.months) : null;
     } catch (err) {
       this._data = { takt: [], summary: null, days: null, months: null, error: String(err?.message || err) };
     }
@@ -191,7 +204,7 @@ export class CentralHeatingCard extends HeatingCardBase {
   }
 
   _wantsStats() {
-    return ["burner", "curve", "dhw"].some((s) => this._config.sections.includes(s));
+    return ["burner", "curve", "dhw", "solar", "efficiency", "footer"].some((s) => this._config.sections.includes(s));
   }
 
   setConfig(config) {
@@ -212,7 +225,10 @@ export class CentralHeatingCard extends HeatingCardBase {
       ? (show("now") ? this._nowSection(x) : "") +
         (show("burner") && (x.e.burner || x.e.burner_hours) ? this._burnerSection(x) : "") +
         (show("curve") && x.e.flow_temp && x.e.outdoor ? this._panelSection("curve", "curve", x, true) : "") +
-        (show("dhw") && x.e.dhw_temp ? this._panelSection("dhw", "drop", x) : "")
+        (show("dhw") && x.e.dhw_temp ? this._panelSection("dhw", "drop", x) : "") +
+        (show("solar") && x.e.solar_today ? this._panelSection("solar", "sun", x, false, x.t("solar_note")) : "") +
+        (show("efficiency") ? this._efficiencySection(x) : "") +
+        (show("footer") ? this._footer(x) : "")
       : `<div class="empty">${svgIcon("alert")}<span>${esc(t("no_entities"))}</span></div>`;
     this.shadowRoot.innerHTML = `<style>${STYLE}</style><ha-card class="${x.animate ? "anim" : ""}">
       ${show("header") ? this._header(x) : ""}
@@ -221,13 +237,14 @@ export class CentralHeatingCard extends HeatingCardBase {
     this._mountChart();
     this._mountCurve();
     this._mountDhw();
+    this._mountSolar();
     this._maybeLoad();
   }
 
   /** Panel with readout, plot, axis, legend, extra and hint; element ids prefixed with `p`. */
-  _panelSection(p, icon, { t }, tall = false) {
+  _panelSection(p, icon, { t }, tall = false, note = null) {
     return `<section>
-      <div class="section-title">${svgIcon(icon)}<span>${esc(t(`${p}_title`))}</span><span class="note">${esc(t("last_48h"))}</span></div>
+      <div class="section-title">${svgIcon(icon)}<span>${esc(t(`${p}_title`))}</span><span class="note">${esc(note ?? t("last_48h"))}</span></div>
       <div class="panel">
         <div class="readout" id="${p}-readout"></div>
         <div class="plot${tall ? " tall" : ""}" id="${p}-plot"></div>
@@ -372,6 +389,169 @@ export class CentralHeatingCard extends HeatingCardBase {
     $("extra").innerHTML = kpis.length ? `<div class="kpis">${kpis.join("")}</div>` : "";
     $("hint").textContent = d.charge || d.circ ? t("hint_dhw") : "";
     scrub(plot, view, $("readout"));
+  }
+
+  _kpi(k, v, p = "", badge = "") {
+    return `<div class="kpi"><span class="k">${esc(k)}</span><span class="v">${v}${badge}</span>${p ? `<span class="p">${esc(p)}</span>` : ""}</div>`;
+  }
+
+  _mountSolar() {
+    const plot = this.shadowRoot?.getElementById("solar-plot");
+    if (!plot) return;
+    const { t, lang, tz, e } = this._ctx();
+    const d = this._data;
+    if (!d) return this._emptyPanel("solar", t("loading"));
+    if (!d.days?.some((r) => r.solar !== null)) return this._emptyPanel("solar", t("no_stats"));
+    const today = num(this._hass, e.solar_today) ?? d.days.at(-1).solar ?? 0;
+    const view = solarView(d.days, today, { t, lang, tz });
+    const $ = this._fill("solar", view, H);
+    const kpis = [];
+    const coll = num(this._hass, e.solar_collector);
+    const stor = num(this._hass, e.solar_storage);
+    if (coll !== null || stor !== null)
+      kpis.push(
+        this._kpi(
+          t("k_collector"),
+          `${fmtTemp(coll, lang)} <small>/</small> ${fmtTemp(stor, lang)} <small>°C</small>`,
+          t("k_collector_p"),
+        ),
+      );
+    if (d.solarPump)
+      kpis.push(
+        this._kpi(
+          t("k_solar_pump"),
+          esc(t("k_solar_pump_v", { v: fmtNum(d.solarPump.hoursPerDay, lang, 1) })),
+          t("k_solar_pump_p"),
+        ),
+      );
+    const months = (d.months || []).slice(1).filter((m) => m.solar !== null);
+    if (months.length) {
+      const year = months.reduce((s, m) => s + m.solar, 0);
+      const best = months.reduce((a, m) => (m.solar > a.solar ? m : a));
+      const label = new Date(Date.UTC(best.y, best.m, 15)).toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", {
+        month: "long",
+        timeZone: "UTC",
+      });
+      kpis.push(
+        this._kpi(
+          t("k_solar_year"),
+          `${fmtNum(year / 1000, lang, 1)} <small>MWh</small>`,
+          t("k_solar_year_p", { m: label, v: fmtNum(best.solar, lang) }),
+        ),
+      );
+      const k = Number(this._config.kwh_per_unit) || 10;
+      const eff = Number(this._config.boiler_efficiency) || 0.85;
+      const fuel = this._config.fuel === "gas" ? "gas" : "oil";
+      const units = Math.round(year / (k * eff) / 10) * 10;
+      kpis.push(
+        this._kpi(
+          t("k_saved"),
+          esc(t(`k_saved_${fuel}`, { v: fmtNum(units, lang) })),
+          t("k_saved_p", { k: fmtNum(k, lang), e: fmtNum(eff * 100, lang) }),
+        ),
+      );
+    }
+    $("extra").innerHTML = kpis.length ? `<div class="kpis">${kpis.join("")}</div>` : "";
+    scrub(plot, view, $("readout"));
+  }
+
+  _efficiencySection({ t, lang, e }) {
+    const d = this._data;
+    const f = d?.eff;
+    if (!f) return "";
+    const fuel = this._config.fuel === "gas" ? "gas" : "oil";
+    const unit = t(`unit_${fuel}`);
+    const base = Number(this._config.heating_base_temp) || 15;
+    const tiles = [];
+    if (f.hoursPerHdd !== null)
+      tiles.push(
+        this._kpi(
+          t("k_hpk"),
+          `${fmtNum(f.hoursPerHdd, lang, 2)} <small>h/Kd</small>`,
+          t("k_hpk_p", { h: fmtNum(f.hours, lang), d: fmtNum(f.deg, lang) }),
+        ),
+      );
+    if (f.fuelPerHour !== null)
+      tiles.push(
+        this._kpi(
+          t(`k_fuel_h_${fuel}`),
+          `${fmtNum(f.fuelPerHour, lang, 2)} <small>${esc(unit)}/h</small>`,
+          t("k_fuel_h_p", { f: `${fmtNum(f.fuel, lang)} ${unit}`, h: fmtNum(f.hours, lang) }),
+        ),
+      );
+    if (f.fuelPerHdd !== null)
+      tiles.push(
+        this._kpi(
+          t(`k_fuel_k_${fuel}`),
+          `${fmtNum(f.fuelPerHdd, lang, 2)} <small>${esc(unit)}/Kd</small>`,
+          t("k_fuel_k_p", { b: base }),
+        ),
+      );
+    if (f.startsPerHdd !== null) tiles.push(this._kpi(t("k_spk"), fmtNum(f.startsPerHdd, lang, 1), t("k_spk_p")));
+    if (f.stage2 !== null) {
+      const life = num(this._hass, e.burner_hours_2) / num(this._hass, e.burner_hours);
+      tiles.push(
+        this._kpi(
+          t("k_stage2"),
+          `${fmtNum(f.stage2 * 100, lang)} <small>%</small>`,
+          Number.isFinite(life) ? t("k_stage2_p", { v: fmtNum(life * 100, lang) }) : "",
+        ),
+      );
+    }
+    if (f.modulation !== null)
+      tiles.push(this._kpi(t("k_mod"), `≈ ${fmtNum(f.modulation, lang)} <small>%</small>`, t("k_mod_p")));
+    if (d.summer !== null && d.summer !== undefined)
+      tiles.push(this._kpi(t("k_summer"), esc(t("k_summer_v", { v: fmtNum(d.summer, lang) })), t("k_summer_p")));
+    if (!tiles.length) return "";
+    return `<section>
+      <div class="section-title">${svgIcon("gauge")}<span>${esc(t("eff_title"))}</span><span class="note">${esc(t("eff_note"))}</span></div>
+      <div class="kpis flat">${tiles.join("")}</div>
+    </section>`;
+  }
+
+  _footer({ t, lang, tz, e }) {
+    const items = [];
+    const hours = num(this._hass, e.burner_hours);
+    const starts = num(this._hass, e.burner_starts);
+    if (hours !== null)
+      items.push({
+        k: t("f_hours"),
+        v: `${fmtNum(hours, lang)} h`,
+        d: starts ? t("f_hours_d", { v: fmtNum((hours * 60) / starts, lang, 1) }) : "",
+      });
+    if (starts !== null) items.push({ k: t("f_starts"), v: fmtNum(starts, lang), d: t("f_starts_d") });
+    const m = this._data?.maint;
+    if (m && m.hours !== null && hours !== null) {
+      const date = new Date(this._config.maintenance_date).toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", {
+        day: "2-digit",
+        month: "2-digit",
+        year: "numeric",
+        timeZone: tz,
+      });
+      items.push({
+        k: t("f_maint"),
+        v: `${fmtNum(hours - m.hours, lang)} h`,
+        d:
+          m.starts !== null && starts !== null
+            ? t("f_maint_d", { n: fmtNum(starts - m.starts, lang), d: date })
+            : t("f_maint_d0", { d: date }),
+      });
+    }
+    const a = this._data?.avail;
+    if (a !== null && a !== undefined)
+      items.push({
+        k: t("f_avail"),
+        v: `${fmtNum(a * 100, lang, 1)} %`,
+        d: t("f_avail_d", { b: this._resolved?.brand || "" }),
+        cls: a < 0.95 ? "warn" : "",
+      });
+    if (!items.length) return "";
+    return `<div class="footer">${items
+      .map(
+        (i) =>
+          `<div><div class="k">${esc(i.k)}</div><div class="v">${esc(i.v)}</div>${i.d ? `<div class="d${i.cls ? ` ${i.cls}` : ""}">${esc(i.d)}</div>` : ""}</div>`,
+      )
+      .join("")}</div>`;
   }
 
   _burnerSection({ t }) {

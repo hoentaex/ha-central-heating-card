@@ -176,12 +176,16 @@ const byKey = (rows, keyOf, field) => {
   return m;
 };
 
-/** 30 (n) days: [{ start, key, today, hours, starts, temp }] from daily statistics. */
+/** 30 (n) days: [{ start, key, today, hours, starts, temp, hours2, mod, solar, fuel }] from daily statistics. */
 export function statDays(stats, e, tz, now = new Date(), n = 30) {
   const k = (t) => dayKey(t, tz);
   const hours = byKey(stats?.[e.burner_hours], k, "change");
   const starts = byKey(stats?.[e.burner_starts], k, "change");
   const temp = byKey(stats?.[e.outdoor], k, "mean");
+  const hours2 = byKey(stats?.[e.burner_hours_2], k, "change");
+  const mod = byKey(stats?.[e.modulation], k, "mean");
+  const solar = byKey(stats?.[e.solar_today], k, "change");
+  const fuel = byKey(stats?.[e.fuel], k, "change");
   return dayWindows(now, tz, n).map((w) => ({
     start: w.start,
     key: w.key,
@@ -189,6 +193,10 @@ export function statDays(stats, e, tz, now = new Date(), n = 30) {
     hours: hours.get(w.key) ?? null,
     starts: starts.get(w.key) ?? null,
     temp: temp.get(w.key) ?? null,
+    hours2: hours2.get(w.key) ?? null,
+    mod: mod.get(w.key) ?? null,
+    solar: solar.get(w.key) ?? null,
+    fuel: fuel.get(w.key) ?? null,
   }));
 }
 
@@ -201,6 +209,7 @@ export function statMonths(stats, e, tz, now = new Date(), n = 13) {
   const hours = byKey(stats?.[e.burner_hours], k, "change");
   const starts = byKey(stats?.[e.burner_starts], k, "change");
   const temp = byKey(stats?.[e.outdoor], k, "mean");
+  const solar = byKey(stats?.[e.solar_today], k, "change");
   const p = parts(now.getTime(), tz);
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
@@ -219,6 +228,7 @@ export function statMonths(stats, e, tz, now = new Date(), n = 13) {
       temp: temp.get(key) ?? null,
       prevHours: hours.get(prev) ?? null,
       prevStarts: starts.get(prev) ?? null,
+      solar: solar.get(key) ?? null,
     });
   }
   return out;
@@ -233,7 +243,7 @@ const bucket = (now, minutes) => Math.floor(now.getTime() / (minutes * MIN));
 
 /** History of the burner, the starts counter and the hot-water pumps over the last `days` days (cached 5 min). */
 export function fetchHistory(hass, cache, e, tz, now = new Date(), days = 8) {
-  const ids = [e.burner, e.burner_starts, e.pump_dhw_charge, e.pump_dhw_circ].filter(Boolean);
+  const ids = [e.burner, e.burner_starts, e.pump_dhw_charge, e.pump_dhw_circ, e.pump_solar].filter(Boolean);
   if (!ids.length) return Promise.resolve({});
   const start = dayStart(now, tz, -(days - 1));
   return cache.get(`hist|${ids.join(",")}|${bucket(now, 5)}`, Date.now() + 5 * MIN, () =>
@@ -243,7 +253,15 @@ export function fetchHistory(hass, cache, e, tz, now = new Date(), days = 8) {
 
 /** Daily (31 days) and monthly (25 months) statistics of burner hours, starts and outdoor temperature. */
 export function fetchStats(hass, cache, e, tz, now = new Date()) {
-  const ids = [e.burner_hours, e.burner_starts, e.outdoor].filter(Boolean);
+  const ids = [
+    e.burner_hours,
+    e.burner_starts,
+    e.outdoor,
+    e.burner_hours_2,
+    e.modulation,
+    e.solar_today,
+    e.fuel,
+  ].filter(Boolean);
   if (!ids.length) return Promise.resolve({ days: {}, months: {} });
   const p = parts(now.getTime(), tz);
   const end = new Date(now.getTime() + 60 * MIN);
@@ -348,4 +366,77 @@ export function pumpSummary(history, id, isOn, tz, now = new Date(), n = 8) {
     minPerRun: runs ? onMs / 60e3 / runs : null,
     hoursPerDay: onMs / 3.6e6 / days.length,
   };
+}
+
+// ---------- efficiency, maintenance, availability ----------
+
+/** Share of the time (0 … 1) the entity had a usable state over the last `days` days, or null without history. */
+export function availability(history, id, tz, now = new Date(), days = 7) {
+  const pts = historyPoints(history?.[id]);
+  if (!pts.length) return null;
+  const start = dayStart(now, tz, -(days - 1)).getTime() - 0;
+  const from = Math.max(start, pts[0].t);
+  const total = now.getTime() - from;
+  if (total <= 0) return null;
+  let bad = 0;
+  pts.forEach((p, i) => {
+    const a = Math.max(p.t, from);
+    const b = i + 1 < pts.length ? pts[i + 1].t : now.getTime();
+    if (b > a && ["unavailable", "unknown"].includes(String(p.s).toLowerCase())) bad += b - a;
+  });
+  return 1 - bad / total;
+}
+
+/**
+ * Key figures of the last 30 days: burner hours per heating degree day, starts per heating degree day, share of
+ * stage 2, mean modulation while running, fuel per burner hour and per heating degree day. Missing inputs → null.
+ */
+export function efficiency(days, base = 15) {
+  const full = days.filter((d) => !d.today);
+  const sum = (k) => (full.some((d) => d[k] !== null) ? full.reduce((s, d) => s + (d[k] ?? 0), 0) : null);
+  const hours = sum("hours");
+  const deg = full.reduce((s, d) => s + hdd(d.temp, base), 0);
+  const starts = sum("starts");
+  const hours2 = sum("hours2");
+  const fuel = sum("fuel");
+  // Daily mean modulation over 24 h divided by the share of the day the burner ran.
+  const mods = full.filter((d) => d.mod !== null && d.hours).map((d) => Math.min(100, d.mod / (d.hours / 24)));
+  return {
+    days: full.length,
+    hours,
+    deg,
+    hoursPerHdd: hours !== null && deg > 0 ? hours / deg : null,
+    startsPerHdd: starts !== null && deg > 0 ? starts / deg : null,
+    stage2: hours2 !== null && hours ? hours2 / hours : null,
+    modulation: mods.length ? mods.reduce((s, v) => s + v, 0) / mods.length : null,
+    fuel,
+    fuelPerHour: fuel !== null && hours ? fuel / hours : null,
+    fuelPerHdd: fuel !== null && deg > 0 ? fuel / deg : null,
+  };
+}
+
+/** Mean burner hours per summer month (June–September) with data, or null (hot water only). */
+export function summerLoad(months) {
+  const s = months.filter((m) => [5, 6, 7, 8].includes(m.m) && m.hours !== null && !m.current);
+  return s.length >= 2 ? s.reduce((a, m) => a + m.hours, 0) / s.length : null;
+}
+
+/** Counter readings (burner hours, starts) at the end of the maintenance day, from the statistics' state. */
+export function fetchMaintenance(hass, cache, e, date, tz) {
+  const ids = [e.burner_hours, e.burner_starts].filter(Boolean);
+  const d = new Date(date);
+  if (!ids.length || Number.isNaN(d.getTime())) return Promise.resolve(null);
+  const start = dayStart(d, tz, 0);
+  return cache.get(`maint|${ids.join(",")}|${start.getTime()}`, Date.now() + 12 * 60 * MIN, async () => {
+    const res = await hass.callWS(statsRequest(ids, start, dayStart(d, tz, 1), "day", ["state"]));
+    const last = (id) => {
+      const rows = res?.[id] || [];
+      const v = rows.length ? val(rows.at(-1).state) : null;
+      return v;
+    };
+    return {
+      hours: e.burner_hours ? last(e.burner_hours) : null,
+      starts: e.burner_starts ? last(e.burner_starts) : null,
+    };
+  });
 }
