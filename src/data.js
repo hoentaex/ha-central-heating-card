@@ -231,9 +231,9 @@ export const hdd = (temp, base) => (temp === null ? 0 : Math.max(0, base - temp)
 
 const bucket = (now, minutes) => Math.floor(now.getTime() / (minutes * MIN));
 
-/** Burner and starts-counter history of the last `days` days (cached 5 minutes). */
+/** History of the burner, the starts counter and the hot-water pumps over the last `days` days (cached 5 min). */
 export function fetchHistory(hass, cache, e, tz, now = new Date(), days = 8) {
-  const ids = [e.burner, e.burner_starts].filter(Boolean);
+  const ids = [e.burner, e.burner_starts, e.pump_dhw_charge, e.pump_dhw_circ].filter(Boolean);
   if (!ids.length) return Promise.resolve({});
   const start = dayStart(now, tz, -(days - 1));
   return cache.get(`hist|${ids.join(",")}|${bucket(now, 5)}`, Date.now() + 5 * MIN, () =>
@@ -254,4 +254,98 @@ export function fetchStats(hass, cache, e, tz, now = new Date()) {
     ]);
     return { days: days || {}, months: months || {} };
   });
+}
+
+/** Hourly means of the last 48 hours: flow, outdoor and hot-water temperature (cached 15 minutes). */
+export function fetchHourly(hass, cache, e, now = new Date(), hours = 48) {
+  const ids = [e.flow_temp, e.outdoor, e.dhw_temp].filter(Boolean);
+  if (!ids.length) return Promise.resolve({});
+  const start = new Date(Math.floor(now.getTime() / 3600e3) * 3600e3 - (hours - 1) * 3600e3);
+  return cache.get(`hourly|${ids.join(",")}|${bucket(now, 15)}`, Date.now() + 15 * MIN, () =>
+    hass.callWS(statsRequest(ids, start, now, "hour", ["mean"])),
+  );
+}
+
+// ---------- hourly values: heating curve and hot water ----------
+
+/** The last `n` hours, oldest first: [{ start, flow, outdoor, dhw }] (null where nothing was recorded). */
+export function hourRows(stats, e, now = new Date(), n = 48) {
+  const at = (id) => {
+    const m = new Map();
+    for (const r of stats?.[id] || []) {
+      const v = val(r.mean);
+      if (v !== null) m.set(Math.floor(ms(r.start) / 3600e3), v);
+    }
+    return m;
+  };
+  const flow = at(e.flow_temp);
+  const outdoor = at(e.outdoor);
+  const dhw = at(e.dhw_temp);
+  const last = Math.floor(now.getTime() / 3600e3);
+  const out = [];
+  for (let h = last - n + 1; h <= last; h++)
+    out.push({
+      start: new Date(h * 3600e3),
+      flow: flow.get(h) ?? null,
+      outdoor: outdoor.get(h) ?? null,
+      dhw: dhw.get(h) ?? null,
+    });
+  // The running hour has no statistics yet: drop it when it is empty.
+  if (out.length && out.at(-1).flow === null && out.at(-1).dhw === null) out.pop();
+  return out;
+}
+
+/** Least-squares line y = a + b·x, or null with fewer than 4 points or less than 2 K spread outdoors. */
+export function fitLine(pts) {
+  if (pts.length < 4) return null;
+  const xs = pts.map((p) => p.x);
+  if (Math.max(...xs) - Math.min(...xs) < 2) return null;
+  const mx = xs.reduce((s, v) => s + v, 0) / pts.length;
+  const my = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+  const sxx = pts.reduce((s, p) => s + (p.x - mx) ** 2, 0);
+  const b = pts.reduce((s, p) => s + (p.x - mx) * (p.y - my), 0) / sxx;
+  return { a: my - b * mx, b };
+}
+
+/**
+ * Points of the heating curve (outdoor → flow) with a flag `low` for setback (or hot-water priority) hours, found
+ * from the data alone: points more than 4 K below the trend are set aside and the trend is fitted again on the rest
+ * (a few rounds). The set curves are only drawn, not used here: the measured flow often runs a few K below them.
+ */
+export function curvePoints(rows) {
+  const pts = rows
+    .map((r, i) =>
+      r.flow === null || r.outdoor === null ? null : { i, x: r.outdoor, y: r.flow, start: r.start, low: false },
+    )
+    .filter(Boolean);
+  let fit = fitLine(pts);
+  for (let round = 0; fit && round < 4; round++) {
+    for (const p of pts) p.low = p.y < fit.a + fit.b * p.x - 4;
+    const next = fitLine(pts.filter((p) => !p.low));
+    if (!next) break;
+    fit = next;
+  }
+  if (fit) for (const p of pts) p.low = p.y < fit.a + fit.b * p.x - 4;
+  return { pts, fit };
+}
+
+/**
+ * Runs of a pump per day (charging, circulation) over the finished days of the history window:
+ * { perDay (runs), minPerRun, hoursPerDay } or null without data.
+ */
+export function pumpSummary(history, id, isOn, tz, now = new Date(), n = 8) {
+  if (!id || !history?.[id]) return null;
+  const windows = dayWindows(now, tz, n);
+  const days = burnerDays(historyPoints(history[id]), windows, isOn, now.getTime())
+    .map((d, i) => ({ ...d, today: windows[i].today, full: windows[i].end - windows[i].start }))
+    .filter((d) => !d.today && d.covered > 0.5 * d.full);
+  if (!days.length) return null;
+  const runs = days.reduce((s, d) => s + d.starts, 0);
+  const onMs = days.reduce((s, d) => s + d.onMs, 0);
+  return {
+    days: days.length,
+    perDay: runs / days.length,
+    minPerRun: runs ? onMs / 60e3 / runs : null,
+    hoursPerDay: onMs / 3.6e6 / days.length,
+  };
 }

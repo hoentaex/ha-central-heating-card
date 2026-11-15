@@ -97,6 +97,28 @@ ha-card { overflow: hidden; container-type: inline-size; color: var(--chc-text);
 .plot .bar.prev { fill: color-mix(in srgb, var(--chc-sub) 40%, transparent); }
 .plot polyline { fill: none; stroke-width: 1.5; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .plot .run { stroke: var(--chc-text); }
+.plot.tall { height: 180px; }
+.plot .curve { stroke: var(--chc-heat); }
+.plot .curve2 { stroke: var(--chc-heat); stroke-dasharray: 5 4; opacity: .8; }
+.plot .fit { stroke: var(--chc-sub); stroke-dasharray: 2 3; }
+.plot .water { stroke: var(--chc-water); }
+.plot .target { stroke: var(--chc-sub); stroke-width: 1.2; stroke-dasharray: 4 4; vector-effect: non-scaling-stroke; }
+.plot .pt { position: absolute; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; box-sizing: border-box; pointer-events: none; background: color-mix(in srgb, var(--chc-heat) 80%, transparent); }
+.plot .pt.low { background: var(--chc-card); border: 1.5px solid var(--chc-heat); }
+.plot .pt.on { width: 12px; height: 12px; margin: -6px 0 0 -6px; border: 2px solid var(--chc-text); }
+.plot .ylab { position: absolute; left: 0; font-size: 10px; color: var(--chc-sub); transform: translateY(-110%); pointer-events: none; }
+.plot .hdot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; box-sizing: border-box; pointer-events: none; background: var(--chc-card); border: 2.5px solid var(--chc-text); }
+.sw.fill { width: 10px; height: 10px; border-radius: 50%; background: var(--sw); }
+.sw.ring { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--sw); box-sizing: border-box; }
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.kpi { background: var(--chc-card); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.kpi .k { font-size: 12px; color: var(--chc-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.kpi .v { font-size: 18px; font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
+.kpi .p { font-size: 12px; color: var(--chc-sub); }
+.badge { --c: var(--chc-temp); display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
+         background: color-mix(in srgb, var(--c) 16%, transparent); color: color-mix(in srgb, var(--c) 62%, var(--chc-text)); }
+.badge.mid { --c: var(--chc-mid); } .badge.good { --c: var(--chc-good); } .badge.warn { --c: var(--chc-warn); }
+@container (max-width: 360px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
 .plot .temp { stroke: var(--chc-temp); stroke-dasharray: 3 3; }
 .plot .mark { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; box-sizing: border-box; pointer-events: none; background: var(--chc-card); border: 2px solid var(--chc-text); }
 .plot .hl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--chc-sub); pointer-events: none; }

@@ -200,3 +200,127 @@ export function monthsView(months, { t, lang }) {
     note: t("note_months"),
   };
 }
+
+// ---------- heating curve and hot water ----------
+
+export const CH = 180;
+const hourLabel = (d, lang, tz) =>
+  d
+    .toLocaleString(locale(lang), {
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hourCycle: "h23",
+      timeZone: tz,
+    })
+    .replace(",", "");
+
+/**
+ * Heating curve: flow over outdoor temperature as dots (setback hours as rings), the set curves (ViCare) or the
+ * trend of the normal hours as lines. `curves`: { normal, reduced } functions or null.
+ */
+export function curveView({ pts, fit }, curves, { t, lang, tz }) {
+  const xs = pts.map((p) => p.x);
+  const xLo = Math.floor((Math.min(...xs) - 1) / 2) * 2;
+  const xHi = Math.max(xLo + 6, Math.ceil((Math.max(...xs) + 1) / 2) * 2);
+  const fns = curves ? [curves.normal, curves.reduced].filter(Boolean) : fit ? [(x) => fit.a + fit.b * x] : [];
+  const ys = [...pts.map((p) => p.y), ...fns.flatMap((f) => [f(xLo), f(xHi)])];
+  const yLo = Math.floor((Math.min(...ys) - 2) / 10) * 10;
+  const yHi = Math.max(yLo + 20, Math.ceil((Math.max(...ys) + 2) / 10) * 10);
+  const X = (v) => ((v - xLo) / (xHi - xLo)) * W;
+  const Y = (v) => CH - 6 - ((v - yLo) / (yHi - yLo)) * (CH - 14);
+  const yTicks = [];
+  for (let v = yLo; v <= yHi; v += 10) yTicks.push(v);
+  let svg = grid(yTicks.map(Y));
+  const path = (f, cls) => {
+    const p = [];
+    for (let x = xLo; x <= xHi + 1e-9; x += 0.5) p.push([X(x), Y(f(x))]);
+    return line(p, cls);
+  };
+  if (curves?.normal) svg += path(curves.normal, "curve");
+  if (curves?.reduced) svg += path(curves.reduced, "curve2");
+  if (!curves && fit) svg += path((x) => fit.a + fit.b * x, "fit");
+  const marks = pts.map((p) => ({ x: X(p.x), y: Y(p.y), cls: p.low ? "pt low" : "pt" }));
+  const at0 = curves?.normal ? curves.normal(0) : null;
+  const rest = fit
+    ? readout(
+        big(fmtNum(fit.a, lang), t("flow_at_zero")),
+        [
+          fit.b > -0.05 ? t("per_kelvin_none") : t("per_kelvin", { v: fmtNum(-fit.b, lang, 2) }),
+          at0 === null ? "" : t("target_at_zero", { v: fmtNum(at0, lang) }),
+        ]
+          .filter(Boolean)
+          .join(" · "),
+      )
+    : readout("–", t("curve_too_few"));
+  const at = (i) => {
+    const p = pts[i];
+    return readout(
+      `${big(fmtNum(p.y, lang, 1), t("flow_c"))} · ${big(fmtNum(p.x, lang, 1), t("outdoor_c"))}`,
+      `${hourLabel(p.start, lang, tz)} · ${t(p.low ? "setback" : "normal_op")}`,
+    );
+  };
+  const step = (xHi - xLo) / 4;
+  return {
+    svg,
+    marks,
+    n: pts.length,
+    at,
+    rest,
+    yLabels: yTicks.map((v) => ({ y: Y(v), text: `${v}°` })),
+    axis: [0, 1, 2, 3, 4].map((k) => `${fmtNum(xLo + k * step, lang)} °C`),
+    legend: [
+      ["fill", "var(--chc-heat)", t("lg_normal")],
+      ["ring", "var(--chc-heat)", t("lg_setback")],
+      ...(curves?.normal ? [["line", "var(--chc-heat)", t("lg_curve_normal")]] : []),
+      ...(curves?.reduced ? [["dash", "var(--chc-heat)", t("lg_curve_reduced")]] : []),
+      ...(!curves && fit ? [["dash", "var(--chc-sub)", t("lg_trend")]] : []),
+    ],
+  };
+}
+
+/** Hot water: the cylinder temperature over the last 48 hours with the target as a dashed line. */
+export function dhwView(rows, target, { t, lang, tz }) {
+  const vals = rows.map((r) => r.dhw);
+  const known = vals.filter((v) => v !== null);
+  const lo = Math.floor((Math.min(...known, target ?? Infinity) - 3) / 5) * 5;
+  const hi = Math.max(lo + 15, Math.ceil((Math.max(...known, target ?? -Infinity) + 3) / 5) * 5);
+  const n = rows.length;
+  const xOf = (i) => ((i + 0.5) / n) * W;
+  const yOf = (i) => (vals[i] === null ? H / 2 : H - 6 - ((vals[i] - lo) / (hi - lo)) * (H - 14));
+  const Y = (v) => H - 6 - ((v - lo) / (hi - lo)) * (H - 14);
+  let svg = grid([Y(lo), Y((lo + hi) / 2), Y(hi)]);
+  if (target !== null)
+    svg += `<line class="target" x1="0" x2="${W}" y1="${Y(target).toFixed(1)}" y2="${Y(target).toFixed(1)}"/>`;
+  const pts = vals.map((v, i) => (v === null ? null : [xOf(i), yOf(i)])).filter(Boolean);
+  if (pts.length > 1) svg += line(pts, "water");
+  const min = Math.min(...known);
+  const max = Math.max(...known);
+  const rest = readout(
+    big(`${fmtNum(min, lang)}–${fmtNum(max, lang)}`, t("dhw_range")),
+    target === null
+      ? t("last_48h")
+      : `${t("target", { v: `${fmtNum(target, lang)} °C` })} · ${t(min >= target - 1 ? "dhw_above" : "dhw_swings")}`,
+  );
+  const at = (i) =>
+    readout(
+      vals[i] === null ? "–" : big(fmtNum(vals[i], lang, 1), "°C"),
+      `${hourLabel(rows[i].start, lang, tz)}${target === null ? "" : ` · ${t("target", { v: `${fmtNum(target, lang)} °C` })}`}`,
+    );
+  return {
+    svg,
+    n,
+    xOf,
+    yOf,
+    at,
+    rest,
+    yLabels: [lo, (lo + hi) / 2, hi].map((v) => ({ y: Y(v), text: `${fmtNum(v, lang)}°` })),
+    axis: [rows[0], rows[Math.floor(n / 2)], rows[n - 1]].map((r, k) =>
+      k === 2 ? t("now_short") : hourLabel(r.start, lang, tz),
+    ),
+    legend: [
+      ["line", "var(--chc-water)", t("lg_cylinder")],
+      ...(target === null ? [] : [["dash", "var(--chc-sub)", t("lg_target")]]),
+    ],
+  };
+}

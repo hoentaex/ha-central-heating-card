@@ -7,8 +7,8 @@
 **[Deutsch](#deutsch) · [English](#english)**
 
 > [!NOTE]
-> **In Arbeit.** Die Karte entsteht in Phasen; Phase 1 (Gerüst, Erkennung, „Jetzt“, Mini-Karte) und Phase 2
-> (Brenner: Takt, 30 Tage, 12 Monate) sind fertig. Heizkurve, Warmwasser, Solar, Effizienz und Hinweise folgen.
+> **In Arbeit.** Die Karte entsteht in Phasen; fertig sind „Jetzt“, Brenner (Takt, 30 Tage, 12 Monate), Heizkurve
+> und Warmwasser. Solar, Effizienz und Optimierungs-Hinweise folgen.
 
 ---
 
@@ -43,6 +43,11 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
     Wechseln aus → an. Die Ampel steht auch im Kopf.
   - **30 Tage:** Brennerstunden je Tag mit Außentemperatur, Stunden je Heizgradtag.
   - **12 Monate:** Brennerstunden je Monat neben dem Vorjahresmonat, mit Starts und Laufzeit je Start.
+- **Heizkurve** (letzte 48 h): Vorlauf über Außentemperatur aus Stundenmitteln, Normalbetrieb als Punkte,
+  Absenkung oder Warmwasser-Vorrang als Ringe (aus den Daten erkannt), Trendlinie mit „°C Vorlauf bei 0 °C“ und
+  „K je 1 K kälter“. Bei Viessmann zusätzlich die eingestellten Soll-Kurven (normal und reduziert).
+- **Warmwasser** (letzte 48 h): Speichertemperatur gegen Soll, Ladungen je Tag mit Dauer und Zirkulationsstunden je
+  Tag aus dem Verlauf der Pumpen.
 - **Mini-Karte:** eine Zeile mit Flamme, Takt-Ampel, Starts heute, Kessel, Warmwasser, Außentemperatur und einem
   kleinen Balkendiagramm der Starts.
 
@@ -56,7 +61,7 @@ outdoor_entity: sensor.wetter_aussentemperatur   # optional, ersetzt den Außenf
 entities:               # optional: einzelne Rollen überschreiben ("" blendet sie aus)
   room_temp: ""
 hide: [room]            # optional: boiler, flow, dhw, outdoor, room, pumps
-sections: [header, now, burner]
+sections: [header, now, burner, curve, dhw]
 default_view: takt      # takt | days | months
 heating_base_temp: 15  # Heizgrenze für Heizgradtage
 takt_warn_min: 5        # Ampel: rot unter 5 min je Start

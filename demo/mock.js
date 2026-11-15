@@ -234,6 +234,23 @@ export const RECORDER = {
     off: "aus",
     counter: "sensor.brennerstarts",
     counterEnd: 334624,
+    hours: {
+      "sensor.vorlauftemperatur": [
+        47.5, 47.8, 47.8, 46.1, 43.0, 34.4, 37.5, 38.2, 37.5, 38.3, 39.0, 38.9, 43.8, 47.0, 48.1, 48.5, 48.5, 46.4,
+        47.7, 47.7, 47.7, 47.2, 46.1, 47.4, 47.8, 48.0, 47.1, 46.8, 37.0, 38.0, 39.0, 40.5, 38.4, 40.3, 39.9, 41.3,
+        47.9, 47.2, 48.0, 48.1, 48.2, 48.0, 43.5, 35.1, 43.8, 46.7, 47.5,
+      ],
+      "sensor.aussentemperatur": [
+        1, 0.4, 0, 0, 0.6, 1, 0.4, 0, -0.4, -1, -1, 0.2, 1.5, 5.5, 10.2, 9.0, 8.5, 8.2, 5.6, 3.3, 1.6, 1, 0.8, 0, 0,
+        -0.2, -1, -1.2, -2, -2.8, -3, -3, -3, -2.1, -0.9, 0.7, 2.9, 4.8, 5, 5.3, 6.6, 7, 6.2, 5.5, 6, 6.8, 6.4,
+      ],
+      "sensor.speichertemperatur": [
+        55.4, 52.8, 50.9, 55.2, 56.6, 55.5, 53.9, 52.1, 50.6, 56.7, 54.5, 53.2, 56.6, 55.5, 53.8, 51.7, 50.3, 55.9,
+        56.1, 54.7, 52.8, 51.6, 56.4, 55.3, 52.9, 51.0, 52.2, 57, 56.0, 54.8, 53.1, 51.6, 52.0, 56.6, 54.6, 51.7, 50.6,
+        57, 56.5, 55.9, 54.5, 53.2, 52.0, 50.6, 52.7, 56.0, 53.1,
+      ],
+    },
+    pumps: { "sensor.ladepumpe": [6, 10.3] },
     takt: { starts: [85, 96, 110, 88, 81, 85, 73], hours: [5.23, 6.53, 6.69, 8.58, 4.57, 5.9, 5.1], today: [81, 5.17] },
     days: {
       "sensor.brennerbetriebsstunden": [
@@ -255,6 +272,27 @@ export const RECORDER = {
     off: "off",
     counter: "sensor.vicare_burner_starts",
     counterEnd: 80031,
+    hours: {
+      "sensor.vicare_supply_temperature": [
+        58.0, 49.6, 48.0, 47.4, 47.5, 47.7, 45.7, 49.3, 61.5, 54.8, 56.5, 54.6, 58.5, 58.7, 57.6, 55, 55.5, 55.2, 56.4,
+        58.6, 59.2, 59.6, 59.5, 60.3, 51.2, 49.5, 49.5, 49.9, 47.6, 50.9, 50.2, 50.8, 61.7, 56.5, 57.7, 56.7, 55.0,
+        56.9, 54.8, 54.3, 54.2, 54.8, 56.4, 55.2, 54.4, 53.5, 56.7,
+      ],
+      "sensor.vicare_outside_temperature": [
+        1.8, 1.1, 0.7, 0.3, 0.1, -0.2, -0.6, -0.9, -1.2, -1.2, -0.9, 0.0, 1.4, 3.3, 5.2, 7.3, 8, 7.6, 5.3, 2.9, 1.6,
+        0.7, 0.1, -0.2, -0.6, -0.9, -1.1, -1.5, -1.7, -2.1, -2.1, -2.0, -1.5, -1.1, -0.3, 0.8, 3.0, 5.8, 6.8, 7.8, 8.5,
+        8.7, 8.5, 6.7, 5.7, 6.1, 5.7,
+      ],
+      "sensor.vplusho1_40_ww_speichertemperatur": [
+        67.7, 68.6, 68.6, 68.6, 68.6, 67.8, 67.6, 67.6, 66.7, 66.4, 65.6, 64.1, 62.1, 65.1, 66.4, 66.4, 66.4, 66.4,
+        66.1, 65.9, 67.2, 68.2, 69.2, 69.6, 69.6, 69.6, 69.6, 69.6, 69.6, 69.3, 68.6, 68.6, 68.0, 67.6, 66.7, 65.7,
+        63.2, 61.2, 61.6, 61.6, 61.6, 61.6, 62.1, 62.6, 62.6, 62.6, 62.6,
+      ],
+    },
+    pumps: {
+      "binary_sensor.vicare_dhw_charging_active": [1, 14],
+      "binary_sensor.vicare_dhw_circulation_pump_active": [115, 5],
+    },
     takt: { starts: [36, 41, 40, 45, 44, 39, 32], hours: [6, 8, 8, 8, 7, 6, 6], today: [42, 8.34] },
     days: {
       "sensor.vicare_burner_hours": [
@@ -302,13 +340,27 @@ export function simulateHistory(house, now = new Date()) {
       starts.push({ s: String(total), lu: (at + 5e3) / 1000 });
     }
   });
-  return { [r.burner]: burner, [r.counter]: starts };
+  const out = { [r.burner]: burner, [r.counter]: starts };
+  for (const [id, [perDay, minutes]] of Object.entries(r.pumps || {})) {
+    const pts = [{ s: r.off, lu: (begin - 3600e3) / 1000 }];
+    for (let d = 0; d < days.length; d++) {
+      const start = begin + d * 864e5;
+      const end = Math.min(start + 864e5, now.getTime());
+      for (let k = 0; k < perDay; k++) {
+        const at = start + ((k + 0.3) / perDay) * 864e5;
+        if (at + minutes * 60e3 > end) break;
+        pts.push({ s: r.on, lu: at / 1000 }, { s: r.off, lu: (at + minutes * 60e3) / 1000 });
+      }
+    }
+    out[id] = pts;
+  }
+  return out;
 }
 
 /** Statistics rows for the requested ids and period, aligned so that the last value is today / this month. */
 export function simulateStats(house, ids, period, now = new Date()) {
   const r = RECORDER[house];
-  const src = period === "month" ? r.months : r.days;
+  const src = period === "month" ? r.months : period === "hour" ? r.hours : r.days;
   const p = parts(now.getTime(), TZ);
   const out = {};
   for (const id of ids) {
@@ -318,9 +370,16 @@ export function simulateStats(house, ids, period, now = new Date()) {
     out[id] = vals
       .map((v, i) => {
         const back = n - 1 - i;
-        const start = period === "month" ? zoned(p.y, p.m - back, 1, 0, TZ) : dayStart(now, TZ, -back);
+        const start =
+          period === "month"
+            ? zoned(p.y, p.m - back, 1, 0, TZ)
+            : period === "hour"
+              ? new Date((Math.floor(now.getTime() / 3600e3) - 1 - back) * 3600e3)
+              : dayStart(now, TZ, -back);
         if (v === null) return null;
-        return id.includes("temp") ? { start: start.getTime(), mean: v } : { start: start.getTime(), change: v };
+        return period === "hour" || id.includes("temp")
+          ? { start: start.getTime(), mean: v }
+          : { start: start.getTime(), change: v };
       })
       .filter(Boolean);
   }
