@@ -43,6 +43,11 @@ const LABELS = {
     language: "Sprache",
     lang_auto: "Automatisch",
     animations: "Animation (Flamme, Pumpen)",
+    illustration: "Illustrierter Kopf (Heizraum)",
+    illustration_theme: "Bild im Kopf",
+    theme_auto: "Wie das Theme",
+    theme_day: "Tag",
+    theme_night: "Nacht",
     popup: "Große Karte als Popup (sonst aufklappen)",
     h_outdoor: "Für Heizgradtage und die Heizkurve. Nützlich, wenn der Fühler der Heizung in der Sonne hängt.",
     h_fuel_entity: "Optional. Ergibt Brennstoff je Brennerstunde und je Heizgradtag.",
@@ -106,6 +111,11 @@ const LABELS = {
     language: "Language",
     lang_auto: "Automatic",
     animations: "Animation (flame, pumps)",
+    illustration: "Illustrated header (boiler room)",
+    illustration_theme: "Header picture",
+    theme_auto: "Follow the theme",
+    theme_day: "Day",
+    theme_night: "Night",
     popup: "Main card as a popup (else expand)",
     h_outdoor: "For degree days and the heating curve. Useful when the heating's sensor gets sun.",
     h_fuel_entity: "Optional. Gives fuel per burner hour and per degree day.",
@@ -225,6 +235,12 @@ export const editorSchema = (lang, { mini = false } = {}) => {
       grid(
         { name: "animations", selector: { boolean: {} } },
         ...(mini ? [{ name: "popup", selector: { boolean: {} } }] : []),
+        { name: "illustration", selector: { boolean: {} } },
+        select("illustration_theme", [
+          { value: "", label: L.theme_auto },
+          { value: "day", label: L.theme_day },
+          { value: "night", label: L.theme_night },
+        ]),
       ),
     ]),
   ];
@@ -237,7 +253,15 @@ export const labelFor = (lang, name) => (LABELS[lang] || LABELS.en)[name] ?? nam
 // Defaults shown in the form (and dropped again from the YAML when left as they are).
 const formDefaults = (mini) => {
   const { entities, ...rest } = DEFAULTS;
-  return { ...rest, popup: mini, sections: SECTIONS, hide: [], language: "" };
+  return {
+    ...rest,
+    popup: mini,
+    sections: SECTIONS,
+    hide: [],
+    language: "",
+    illustration: true,
+    illustration_theme: "",
+  };
 };
 
 /** Card config → form data: defaults filled in, `entities:` spread to e_* fields. */

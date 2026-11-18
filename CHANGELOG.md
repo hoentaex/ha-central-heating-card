@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.0 (2026-11-18)
+
+- **Illustrated header** on the card and the mini card, in the style of juju35's cards: a 90 px banner with the title,
+  the cycling pill and the subtitle on the sky, the boiler drawn at the right (Wolf with its red head, other brands a
+  neutral one) with the boiler temperature on its display, the flame in the combustion window while the burner runs,
+  flow and return pipes to a radiator with rising heat, and the flow temperature as a readout; a warm sky and an orange
+  ground strip while heating, blue while the hot water tank is charged, grey when the burner is off.
+- The burner tile of the Now section moves into the banner (its state and run time go into the section title), the four
+  temperature tiles take the whole width. `illustration: false` keeps the classic header and the burner tile. Night
+  picture with Home Assistant's dark theme, `illustration_theme: day | night` forces it. Both in the visual editor.
+- The status pill follows the title when it fits, else goes under the subtitle (its dot alone when there is no room).
+- Mini card: the banner with a frosted open button, the temperatures and the starts per day under it.
+
 ## 0.1.1 (2026-11-15)
 
 - **Fix:** cycling showed absurd numbers (Wolf: Ø 0,4 min, 982 starts a day, −347.000 starts/year). Wolf's cloud

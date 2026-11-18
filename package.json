@@ -1,6 +1,6 @@
 {
   "name": "ha-central-heating-card",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Lovelace card for Home Assistant: oil or gas central heating (Wolf, Viessmann) with burner, temperatures, analyses and optimisation tips.",
   "private": true,
   "type": "module",

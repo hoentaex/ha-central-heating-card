@@ -35,12 +35,14 @@ import "./popup.js";
 import { scrub } from "./scrub.js";
 import { DEFAULTS, esc, fmtNum, fmtTemp, fmtTime, langOf, modeLabel, SECTIONS, translator, VIEWS } from "./shared.js";
 import { TipStore } from "./store.js";
-import { STYLE } from "./styles.js";
+import { BANNER_STYLE, fitPill, isNight, sceneSVG, sceneState } from "./banner.js";
+import { STYLE as BASE_STYLE } from "./styles.js";
 import { burnerDetail, targetLine } from "./texts.js";
 import { buildTips } from "./tips.js";
 import { tzOf } from "./tz.js";
 
 const VERSION = __VERSION__;
+const STYLE = BASE_STYLE + BANNER_STYLE;
 // One cache for all cards on the page: the full card and the mini card share the recorder requests.
 const SHARED = new Cache();
 // Done / hidden tips, kept in Home Assistant's per-user data (shared by all cards on the page).
@@ -70,6 +72,58 @@ class HeatingCardBase extends HTMLElement {
     super();
     this.attachShadow({ mode: "open" });
     this._sig = "";
+  }
+
+  _illustrated() {
+    return this._config.illustration !== false;
+  }
+
+  /** Measure the banner's pill after each render, and again whenever the card is resized. */
+  _afterRender() {
+    if (!this._illustrated()) return;
+    fitPill(this.shadowRoot);
+    if (!this._ro && typeof ResizeObserver !== "undefined") {
+      this._ro = new ResizeObserver(() => fitPill(this.shadowRoot));
+      this._ro.observe(this);
+    }
+  }
+
+  disconnectedCallback() {
+    this._ro?.disconnect();
+    this._ro = null;
+  }
+
+  /**
+   * The illustrated header: the flame logo, the title with the status pill and the subtitle on the sky, the boiler at
+   * the right. `button` is the close (dialog) or open (mini card) button, drawn as a frosted round button top right.
+   */
+  _banner(x, { sub, button }) {
+    const { t, h, status, color, lang, animate } = x;
+    const pill = this._pill(x);
+    const name = this._config.name || t("title");
+    const state = sceneState(status, h.burner.on);
+    const flowV = h.flow.v ?? h.boiler.v;
+    const scene = sceneSVG({
+      platform: this._resolved?.platform || this._config.preset,
+      state,
+      level: h.burner.level,
+      display: h.boiler.v === null ? "––" : `${fmtTemp(h.boiler.v, lang)}°`,
+      readout: flowV === null ? "" : `${fmtTemp(flowV, lang)}°`,
+      readoutLabel: esc(t(h.flow.v === null ? "boiler" : "flow")),
+      animate,
+    });
+    return `<div class="banner${isNight(this._hass, this._config) ? " night" : ""}${state.warm ? " warm" : ""}">
+      ${scene}
+      <div class="head">
+        <div class="logo" style="--c:${color}">${flameSVG({ on: !!h.burner.on, level: h.burner.level, small: true, animate })}</div>
+        <div class="titles">
+          <div class="trow"><div class="name" title="${esc(name)}">${esc(name)}</div><span class="pill" style="--c:${pill.color}" title="${esc(pill.text)}"><span class="dot"></span><span><span class="pl">${esc(pill.text)}</span><span class="ps">${esc(pill.short)}</span></span></span></div>
+          ${sub ? `<div class="sub" title="${esc(sub)}">${esc(sub)}</div>` : ""}
+        </div>
+      </div>
+      <div class="ground ${state.ground}"></div>
+      ${button || ""}
+    </div>`;
   }
 
   setConfig(config) {
@@ -170,6 +224,7 @@ class HeatingCardBase extends HTMLElement {
     const ids = Object.values(this._resolved?.entities || {});
     return [
       langOf(this._hass, this._config),
+      this._hass?.themes?.darkMode ? "dark" : "light",
       ...ids.map((id) => `${id}=${st[id]?.state}@${st[id]?.last_updated ?? ""}`),
     ].join("|");
   }
@@ -252,6 +307,7 @@ export class CentralHeatingCard extends HeatingCardBase {
       ${show("header") ? this._header(x) : ""}
       <div class="content">${body}</div>
     </ha-card>`;
+    this._afterRender();
     this._wireTips();
     const close = this.shadowRoot.querySelector("[data-close]");
     if (close) close.onclick = () => this.dispatchEvent(new CustomEvent("chc-close"));
@@ -806,6 +862,12 @@ export class CentralHeatingCard extends HeatingCardBase {
     const { t, h, color, animate } = x;
     const name = this._config.name || t("title");
     const sub = this._subtitle(x);
+    if (this._illustrated()) {
+      const button = this._config._dialog
+        ? `<button type="button" class="zoom" data-close aria-label="${esc(t("close"))}">${svgIcon("close")}</button>`
+        : "";
+      return this._banner(x, { sub, button });
+    }
     const pill = this._pill(x);
     return `<div class="header">
       <div class="logo" style="--c:${color}">${flameSVG({ on: !!h.burner.on, level: h.burner.level, small: true, animate })}</div>
@@ -882,6 +944,14 @@ export class CentralHeatingCard extends HeatingCardBase {
       room = `<div class="hint room">${room}</div>`;
     }
     const bt = b.on === null ? t("burner_unknown") : t(b.on ? "burner_on" : "burner_off");
+    // With the illustrated header, the flame is drawn in the banner: the burner state goes into the section title.
+    const flat = this._illustrated() && this._config.sections.includes("header");
+    if (flat)
+      return `<section>
+      <div class="section-title">${svgIcon("clock")}<span>${esc(t("now"))}</span><span class="note">${esc([bt, burnerDetail(b, now, lang, tz, t)].filter(Boolean).join(" · "))}</span></div>
+      <div class="now flat"><div class="tiles">${tiles.join("")}</div></div>
+      ${pumps ? `<div class="pumps">${pumps}</div>` : ""}${room}
+    </section>`;
     return `<section>
       <div class="section-title">${svgIcon("clock")}<span>${esc(t("now"))}</span></div>
       <div class="now">
@@ -980,6 +1050,15 @@ export class CentralHeatingMiniCard extends HeatingCardBase {
         const open = e.target.closest?.("[data-open]");
         if (open) this._open(open);
       });
+    }
+    if (this._illustrated()) {
+      this.shadowRoot.querySelector("[data-row]").innerHTML = `<ha-card class="${animate ? "anim" : ""}">
+        ${this._banner(x, { sub: this._subtitle(x), button: btn })}
+        <div class="mrow"><div class="mdetail">${parts.join(" · ")}</div>${this._spark(takt, pill.color)}</div>
+      </ha-card>`;
+      this._afterRender();
+      this._maybeLoad();
+      return;
     }
     this.shadowRoot.querySelector("[data-row]").innerHTML = `<ha-card class="${animate ? "anim" : ""}">
       <div class="mini">

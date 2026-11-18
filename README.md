@@ -61,8 +61,12 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
   Betrieb (Viessmann), Brennstoff je Brennerstunde und je Heizgradtag (mit `fuel_entity`), Sommer-Grundlast.
 - **Fußzeile:** Brennerstunden und Starts mit Ø Laufzeit je Start, Stunden und Starts seit der letzten Wartung
   (`maintenance_date`), Erreichbarkeit der Hersteller-Cloud über 7 Tage.
-- **Mini-Karte:** eine Zeile mit Flamme, Takt-Ampel, Starts heute, Kessel, Warmwasser, Außentemperatur und einem
-  kleinen Balkendiagramm der Starts. Der Knopf öffnet die große Karte als Popup (oder klappt sie auf).
+- **Illustrierter Kopf** (90 px, wie die neuen Karten von juju35): Titel, Takt-Pill und Untertitel auf dem Himmel,
+  rechts die Therme (Wolf mit rotem Kopf, sonst neutral) mit Kesseltemperatur im Display, Flamme im Brennerfenster
+  solange der Brenner läuft, Vor- und Rücklauf zum Heizkörper mit aufsteigender Wärme und der Vorlauf als Anzeige.
+  Bodenstreifen orange = Heizbetrieb, blau = Speicherladung, grau = aus. Nachtbild mit dem dunklen Theme.
+- **Mini-Karte:** derselbe Kopf, darunter Starts heute, Kessel, Warmwasser, Außentemperatur und ein
+  kleines Balkendiagramm der Starts. Der Knopf öffnet die große Karte als Popup (oder klappt sie auf).
 
 | Optimierung | Takt 7 Tage | Heizkurve |
 |---|---|---|
@@ -116,6 +120,8 @@ kwh_per_unit: 10        # Energie je L bzw. m³ (für „ersetzt“ beim Solar)
 boiler_efficiency: 0.85
 maintenance_date: "2026-04-15"   # optional, letzte Wartung
 animations: true
+illustration: true      # false: schlichter Kopf, Flamme wieder im Abschnitt „Jetzt“
+illustration_theme: night   # optional: day | night, sonst wie das Theme
 language: de            # optional, sonst die Sprache von Home Assistant
 ```
 

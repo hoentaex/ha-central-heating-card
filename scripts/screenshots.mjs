@@ -56,7 +56,7 @@ try {
         console.log(`saved screenshots/curve-${house}.png, tips-${house}.png`);
       }
       const mini = page.locator(`#${theme} central-heating-mini-card`).first();
-      await mini.locator(".mini").waitFor();
+      await mini.locator(".banner, .mini").first().waitFor();
       await page.waitForTimeout(300);
       await mini.screenshot({ path: shot(`mini-${tag}`) });
       console.log(`saved screenshots/mini-${tag}.png`);
