@@ -8,7 +8,7 @@
 
 **[Deutsch](#deutsch) · [English](#english)**
 
-| Wolf | Viessmann |
+| Wolf| Viessmann |
 |---|---|
 | <img src="screenshots/card-wolf-light.png" alt="Central Heating Card mit Wolf, helles Theme" width="420"> | <img src="screenshots/card-viessmann-dark.png" alt="Central Heating Card mit Viessmann, dunkles Theme" width="420"> |
 
