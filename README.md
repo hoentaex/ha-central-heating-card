@@ -87,8 +87,12 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
 
 ### Installation
 
-**HACS:** über den Marketplace-Button oben (benutzerdefiniertes Repository, Typ *Dashboard*), dann „Central Heating
-Card“ installieren und den Browser neu laden.
+**Über den Marketplace:**
+
+[![Repository im Marketplace öffnen](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=hoentaex&repository=ha-central-heating-card&category=plugin)
+
+oder von Hand: **Marketplace → ⋮ → Benutzerdefinierte Repositories** → `https://github.com/hoentaex/ha-central-heating-card`,
+Typ **Dashboard** → *Central Heating Card* installieren → Browser neu laden.
 
 **Manuell:** `ha-central-heating-card.js` aus dem [neuesten Release](https://github.com/hoentaex/ha-central-heating-card/releases/latest)
 nach `config/www/` kopieren und als Dashboard-Ressource `/local/ha-central-heating-card.js` (JavaScript-Modul) eintragen.
@@ -179,7 +183,13 @@ overridden under `entities:`.
   counters, hours since the last service and how reachable the cloud was.
 - **Mini card:** one row with flame, rating, starts today and temperatures; opens the main card as a popup.
 
-Install via HACS (custom repository, type *Dashboard*) or copy `ha-central-heating-card.js` to `config/www/`.
+Install via the Marketplace:
+
+[![Open this repository in the Marketplace](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/marketplace_repository/?owner=hoentaex&repository=ha-central-heating-card&category=plugin)
+
+or by hand: **Marketplace → ⋮ → Custom repositories** → `https://github.com/hoentaex/ha-central-heating-card` (type
+*Dashboard*). Without the Marketplace, copy `ha-central-heating-card.js` to `config/www/` and add it as a JavaScript
+module resource.
 All options are in the visual editor and in the German section above.
 
 MIT licence.
