@@ -31,6 +31,7 @@
       <label><input type="checkbox" id="dhw" /> Warmwasser lädt</label>
       <label><input type="checkbox" id="unavailable" /> Cloud weg</label>
       <label><input type="checkbox" id="anim" checked /> Animation</label>
+      <label><input type="checkbox" id="sparse" /> ohne Außen und Starts</label>
       <label>Sprache <select id="lang"><option>de</option><option>en</option></select></label>
     </div>
     <div class="cols">
@@ -54,7 +55,8 @@
 
       const q = new URLSearchParams(location.search);
       const $ = (id) => document.getElementById(id);
-      const ui = { house: $("house"), burner: $("burner"), dhw: $("dhw"), unavailable: $("unavailable"), anim: $("anim"), lang: $("lang") };
+      const ui = { house: $("house"), burner: $("burner"), dhw: $("dhw"), unavailable: $("unavailable"), anim: $("anim"), lang: $("lang"), sparse: $("sparse") };
+      ui.sparse.checked = q.get("sparse") === "1";
       ui.house.value = q.get("house") || "wolf";
       ui.lang.value = q.get("lang") || "de";
       if (q.get("burner") === "0") ui.burner.checked = false;
@@ -78,6 +80,7 @@
               name: NAMES[ui.house.value],
               animations: ui.anim.checked,
               ...EXTRA[ui.house.value],
+              ...(ui.sparse.checked ? { hide: ["outdoor", "starts"] } : {}),
             });
             el.append(card);
             cards.push(card);
@@ -99,6 +102,7 @@
       for (const k of ["burner", "dhw", "unavailable", "lang"]) ui[k].addEventListener("change", update);
       ui.house.addEventListener("change", build);
       ui.anim.addEventListener("change", build);
+      ui.sparse.addEventListener("change", build);
       setOnChange(() => update());
       build();
       window.__demo = { update, build };

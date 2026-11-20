@@ -31,7 +31,7 @@ try {
         el.style.width = "492px";
       });
       const card = page.locator(`#${theme} central-heating-card`).first();
-      await card.locator(".footer").waitFor();
+      await card.locator(".kts .kt[data-more]").last().waitFor();
       await card.locator("#curve-plot svg").waitFor();
       await card.locator(".tips").waitFor();
       await page.waitForTimeout(500);

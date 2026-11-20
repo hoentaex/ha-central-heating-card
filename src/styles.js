@@ -112,25 +112,11 @@ ha-card { overflow: hidden; container-type: inline-size; color: var(--chc-text);
 .plot .hdot { position: absolute; width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; box-sizing: border-box; pointer-events: none; background: var(--chc-card); border: 2.5px solid var(--chc-text); }
 .sw.fill { width: 10px; height: 10px; border-radius: 50%; background: var(--sw); }
 .sw.ring { width: 10px; height: 10px; border-radius: 50%; border: 1.5px solid var(--sw); box-sizing: border-box; }
-.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.kpi { background: var(--chc-card); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.kpi .k { font-size: 12px; color: var(--chc-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.kpi .v { font-size: 18px; font-weight: 500; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-variant-numeric: tabular-nums; }
-.kpi .p { font-size: 12px; color: var(--chc-sub); }
 .badge { --c: var(--chc-temp); display: inline-block; font-size: 11px; font-weight: 500; padding: 2px 8px; border-radius: 10px; white-space: nowrap;
          background: color-mix(in srgb, var(--c) 16%, transparent); color: color-mix(in srgb, var(--c) 62%, var(--chc-text)); }
 .badge.mid { --c: var(--chc-mid); } .badge.good { --c: var(--chc-good); } .badge.warn { --c: var(--chc-warn); }
-@container (max-width: 360px) { .kpis { grid-template-columns: minmax(0, 1fr); } }
-.kpis.flat .kpi { background: var(--chc-tile); }
-.kpi .v small { font-size: 12px; color: var(--chc-sub); font-weight: 400; }
 .badge.solar { --c: var(--chc-solar); }
 
-/* footer */
-.footer { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 12px 8px; border-top: 1px solid var(--chc-line); padding-top: 14px; }
-.footer .k { font-size: 12px; color: var(--chc-sub); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.footer .v { font-size: 15px; font-weight: 500; margin-top: 2px; font-variant-numeric: tabular-nums; }
-.footer .d { font-size: 11px; margin-top: 1px; color: var(--chc-sub); }
-.footer .d.warn { color: color-mix(in srgb, var(--chc-warn) 62%, var(--chc-text)); }
 .plot .temp { stroke: var(--chc-temp); stroke-dasharray: 3 3; }
 .plot .mark { position: absolute; width: 9px; height: 9px; margin: -4.5px 0 0 -4.5px; border-radius: 50%; box-sizing: border-box; pointer-events: none; background: var(--chc-card); border: 2px solid var(--chc-text); }
 .plot .hl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--chc-sub); pointer-events: none; }

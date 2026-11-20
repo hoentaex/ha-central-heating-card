@@ -36,9 +36,12 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
 - **Kopf:** Flamme, Name, Hersteller · Betriebsart · Programm · Stand. Der Chip zeigt die Takt-Ampel
   („taktet stark · Ø 4,1 min“), solange keine Verbindung besteht „Keine Verbindung“.
 - **Jetzt:** Brenner mit animierter Flamme – drei flackernde Schichten, Glühen und Funken; die Höhe folgt der
-  Modulation (Viessmann), aus ist nur der Umriss zu sehen. Kacheln für Kessel, Vorlauf, Warmwasser und Außen mit
-  Soll-Balken (bei Viessmann das Vorlauf-Soll aus der eingestellten Heizkurve), Pumpen als Chips, Raumtemperatur mit
-  Plausibilitätsprüfung (ein Fühler am Kessel wird durchgestrichen).
+  Modulation (Viessmann), aus ist nur der Umriss zu sehen. Kennzahl-Kacheln für Kessel, Vorlauf, Warmwasser (Balken
+  mit Soll-Marke; bei Viessmann das Vorlauf-Soll aus der eingestellten Heizkurve), Außen mit den letzten 24 Stunden
+  als Kurve und **Starts heute** mit Ø Laufzeit je Start (rot unter `takt_warn_min`, amber unter `takt_good_min`).
+  Pumpen als Chips, Raumtemperatur mit Plausibilitätsprüfung (ein Fühler am Kessel wird durchgestrichen).
+- **Kacheln:** Warmwasser (Speicher, Ladungen, Zirkulation), Solar, Effizienz und „Brenner & Wartung“ nutzen dieselben
+  Kacheln. Fehlt ein Wert, entfällt seine Kachel und die übrigen rücken ohne Lücke nach; ein Klick öffnet den Sensor.
 - **Optimierung:** Hinweise aus festen Regeln – Takten, Warmwasser-Ladungen, Witterungsführung, Raum-Soll, Niveau der
   Heizkurve, Zirkulation, Heizen bei Sommerwetter. Jeder Hinweis zeigt die auslösenden Zahlen, warum es sich lohnt,
   konkrete Schritte und eine grobe Einsparung (Faustwerte). Wo die Integration den Wert schreiben kann
@@ -59,7 +62,7 @@ Aufbau und Look orientieren sich an den Karten von [juju35](https://github.com/j
   letzten 12 Monate mit bestem Monat und dem ersetzten Brennstoff.
 - **Effizienz** (30 Tage): Brennerstunden und Starts je Heizgradtag, Anteil der 2. Brennerstufe (Wolf), Modulation im
   Betrieb (Viessmann), Brennstoff je Brennerstunde und je Heizgradtag (mit `fuel_entity`), Sommer-Grundlast.
-- **Fußzeile:** Brennerstunden und Starts mit Ø Laufzeit je Start, Stunden und Starts seit der letzten Wartung
+- **Brenner & Wartung:** Brennerstunden und Starts mit Ø Laufzeit je Start, Stunden und Starts seit der letzten Wartung
   (`maintenance_date`), Erreichbarkeit der Hersteller-Cloud über 7 Tage.
 - **Illustrierter Kopf** (90 px, wie die neuen Karten von juju35): Titel, Takt-Pill und Untertitel auf dem Himmel,
   rechts die Therme (Wolf mit rotem Kopf, sonst neutral) mit Kesseltemperatur im Display, Flamme im Brennerfenster
@@ -108,7 +111,7 @@ name: Heizung Wolf
 outdoor_entity: sensor.wetter_aussentemperatur   # optional, ersetzt den Außenfühler der Heizung
 entities:               # optional: einzelne Rollen überschreiben ("" blendet sie aus)
   room_temp: ""
-hide: [room]            # optional: boiler, flow, dhw, outdoor, room, pumps
+hide: [room]            # optional: boiler, flow, dhw, outdoor, starts, room, pumps
 sections: [header, now, tips, burner, curve, dhw, solar, efficiency, footer]
 default_view: takt      # takt | days | months
 heating_base_temp: 15   # Heizgrenze für Heizgradtage
@@ -163,14 +166,16 @@ overridden under `entities:`.
 > **Private hobby project**, no warranty, no support: **use at your own risk.** The card only switches something when
 > you confirm "Set" on an optimisation tip (`number.set_value`).
 
-- **Now:** burner with an animated flame (height follows the modulation), boiler / flow / hot-water / outdoor tiles with
-  targets (ViCare flow target from the heating curve), pumps, plausibility check of the room temperature.
+- **Now:** burner with an animated flame (height follows the modulation), KPI tiles for boiler / flow / hot water with
+  target marks (ViCare flow target from the heating curve), outdoor with the last 24 hours as a curve and starts today
+  with the mean run per start; pumps, plausibility check of the room temperature. Hot water, solar, efficiency and
+  "burner & service" use the same tiles; a missing value drops its tile without leaving a gap.
 - **Optimisation:** rule-based tips (short cycling, hot-water charges, weather compensation, room target, curve level,
   circulation, heating in summer) with evidence, reasons, steps and a rough saving; a button sets ViCare number entities
   after a confirmation; done / hidden is kept in Home Assistant's per-user data, done tips compare before and after.
 - **Burner:** cycling over 7 days from the history with a red/amber/green rating, 30 days of burner hours with the
   outdoor temperature, 13 months next to the previous year.
-- **Heating curve** and **hot water** over 48 hours, **solar** (ViCare), **efficiency** over 30 days, **footer** with
+- **Heating curve** and **hot water** over 48 hours, **solar** (ViCare), **efficiency** over 30 days, **burner & service** with
   counters, hours since the last service and how reachable the cloud was.
 - **Mini card:** one row with flame, rating, starts today and temperatures; opens the main card as a popup.
 

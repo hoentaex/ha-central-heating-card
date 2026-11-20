@@ -68,6 +68,7 @@ const LABELS = {
     x_flow: "Vorlauf",
     x_dhw: "Warmwasser",
     x_outdoor: "Außen",
+    x_starts: "Starts heute",
     x_room: "Raum",
     x_pumps: "Pumpen",
   },
@@ -136,6 +137,7 @@ const LABELS = {
     x_flow: "Flow",
     x_dhw: "Hot water",
     x_outdoor: "Outdoor",
+    x_starts: "Starts today",
     x_room: "Room",
     x_pumps: "Pumps",
   },
@@ -156,7 +158,7 @@ export const EDITOR_ROLES = [
   "pump_dhw_charge",
   "pump_dhw_circ",
 ];
-const HIDE = ["boiler", "flow", "dhw", "outdoor", "room", "pumps"];
+const HIDE = ["boiler", "flow", "dhw", "outdoor", "starts", "room", "pumps"];
 
 const ent = (name, domain) => ({ name, selector: { entity: domain ? { domain } : {} } });
 const num = (name, min, max, step, unit) => ({

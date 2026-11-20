@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.0 (2026-11-20)
+
+- **KPI tiles** (as in the tiles view of the energy card's consumers card and the oil card): a round icon, the label,
+  the value large with a small unit, a sub line, a small curve and/or a thin bar with a marker.
+- **Now:** boiler, flow and hot water as tiles with the target mark, outdoor with the last 24 hours as a curve, and the
+  new tile **starts today** (wide) with the mean run per start: red below `takt_warn_min`, amber below `takt_good_min`,
+  the bar against twice the good run time. `hide: [starts]` hides it (also in the editor).
+- **Hot water** (storage, charges, circulation), **solar**, **efficiency** and the former footer, now the section
+  **Burner & service** with its own heading, use the same tiles; badges (often, rare, long) sit beside the value.
+- No gaps: a tile without a value is left out and the last tile of a short row widens until the row is full (three
+  columns in Now, two elsewhere; two on a narrow card). A click on a tile opens the sensor's dialog.
+
 ## 0.2.0 (2026-11-18)
 
 - **Illustrated header** on the card and the mini card, in the style of juju35's cards: a 90 px banner with the title,

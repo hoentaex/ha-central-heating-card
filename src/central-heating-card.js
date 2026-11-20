@@ -31,6 +31,7 @@ import "./editor.js";
 import { flameSVG } from "./flame.js";
 import { num, onOff, readHeating, statusOf, vicareCurve } from "./heating.js";
 import { svgIcon } from "./icons.js";
+import { KPI_STYLE, kpiGrid } from "./kpi.js";
 import "./popup.js";
 import { scrub } from "./scrub.js";
 import { DEFAULTS, esc, fmtNum, fmtTemp, fmtTime, langOf, modeLabel, SECTIONS, translator, VIEWS } from "./shared.js";
@@ -42,7 +43,7 @@ import { buildTips } from "./tips.js";
 import { tzOf } from "./tz.js";
 
 const VERSION = __VERSION__;
-const STYLE = BASE_STYLE + BANNER_STYLE;
+const STYLE = BASE_STYLE + BANNER_STYLE + KPI_STYLE;
 // One cache for all cards on the page: the full card and the mini card share the recorder requests.
 const SHARED = new Cache();
 // Done / hidden tips, kept in Home Assistant's per-user data (shared by all cards on the page).
@@ -308,6 +309,7 @@ export class CentralHeatingCard extends HeatingCardBase {
       <div class="content">${body}</div>
     </ha-card>`;
     this._afterRender();
+    this._wireMore(this.shadowRoot);
     this._wireTips();
     const close = this.shadowRoot.querySelector("[data-close]");
     if (close) close.onclick = () => this.dispatchEvent(new CustomEvent("chc-close"));
@@ -433,37 +435,45 @@ export class CentralHeatingCard extends HeatingCardBase {
     if (!d.hours?.some((r) => r.dhw !== null)) return this._emptyPanel("dhw", t("no_stats"));
     const view = dhwView(d.hours, h.dhw.target, { t, lang, tz });
     const $ = this._fill("dhw", view, H);
-    const kpi = (k, v, p, badge = "") =>
-      `<div class="kpi"><span class="k">${esc(k)}</span><span class="v">${v}${badge}</span>${p ? `<span class="p">${esc(p)}</span>` : ""}</div>`;
-    const badge = (cls, key) => ` <span class="badge ${cls}">${esc(t(key))}</span>`;
-    const kpis = [];
-    if (h.dhw.v !== null)
-      kpis.push(
-        kpi(
-          t("k_storage"),
-          `${fmtTemp(h.dhw.v, lang)} <small>°C</small>`,
-          h.dhw.target === null ? "" : t("k_storage_p", { v: `${fmtTemp(h.dhw.target, lang)} °C` }),
-        ),
-      );
-    if (d.charge)
-      kpis.push(
-        kpi(
-          t("k_charges"),
-          esc(t("k_charges_v", { v: fmtNum(d.charge.perDay, lang, 1) })),
-          t("k_charges_p", { m: fmtNum(d.charge.minPerRun, lang), t: fmtNum(d.charge.hoursPerDay * 60, lang) }),
-          d.charge.perDay > 4 ? badge("mid", "b_often") : badge("good", "b_rare"),
-        ),
-      );
-    if (d.circ)
-      kpis.push(
-        kpi(
-          t("k_circ"),
-          esc(t("k_circ_v", { v: fmtNum(d.circ.hoursPerDay, lang, 1) })),
-          t("k_circ_p", { n: fmtNum(d.circ.perDay, lang) }),
-          d.circ.hoursPerDay > 6 ? badge("mid", "b_long") : "",
-        ),
-      );
-    $("extra").innerHTML = kpis.length ? `<div class="kpis">${kpis.join("")}</div>` : "";
+    const badge = (cls, key) => `<span class="badge ${cls}">${esc(t(key))}</span>`;
+    const e = this._resolved?.entities || {};
+    $("extra").innerHTML = kpiGrid(
+      [
+        {
+          k: t("k_storage"),
+          v: h.dhw.v === null ? null : fmtTemp(h.dhw.v, lang),
+          u: "°C",
+          icon: "drop",
+          c: "var(--chc-water)",
+          s: h.dhw.target === null ? "" : t("k_storage_p", { v: `${fmtTemp(h.dhw.target, lang)} °C` }),
+          p: h.dhw.target === null ? undefined : Math.min(100, (h.dhw.v / 75) * 100),
+          m: h.dhw.target === null ? undefined : Math.min(100, (h.dhw.target / 75) * 100),
+          more: e.dhw_temp,
+        },
+        d.charge && {
+          k: t("k_charges"),
+          v: fmtNum(d.charge.perDay, lang, 1),
+          u: t("u_per_day"),
+          d: d.charge.perDay > 4 ? badge("mid", "b_often") : badge("good", "b_rare"),
+          icon: "update",
+          c: "var(--chc-water)",
+          s: t("k_charges_p", { m: fmtNum(d.charge.minPerRun, lang), t: fmtNum(d.charge.hoursPerDay * 60, lang) }),
+          more: e.pump_dhw_charge,
+        },
+        d.circ && {
+          k: t("k_circ"),
+          v: fmtNum(d.circ.hoursPerDay, lang, 1),
+          u: t("u_h_day"),
+          d: d.circ.hoursPerDay > 6 ? badge("mid", "b_long") : "",
+          icon: "clock",
+          c: "var(--chc-water)",
+          s: t("k_circ_p", { n: fmtNum(d.circ.perDay, lang) }),
+          more: e.pump_dhw_circ,
+        },
+      ],
+      { cols: 2 },
+    );
+    this._wireMore($("extra"));
     $("hint").textContent = d.charge || d.circ ? t("hint_dhw") : "";
     scrub(plot, view, $("readout"));
   }
@@ -624,8 +634,13 @@ export class CentralHeatingCard extends HeatingCardBase {
     });
   }
 
-  _kpi(k, v, p = "", badge = "") {
-    return `<div class="kpi"><span class="k">${esc(k)}</span><span class="v">${v}${badge}</span>${p ? `<span class="p">${esc(p)}</span>` : ""}</div>`;
+  /** Tiles with an entity open Home Assistant's dialog of it. */
+  _wireMore(root) {
+    for (const el of root.querySelectorAll("[data-more]"))
+      el.onclick = () =>
+        this.dispatchEvent(
+          new CustomEvent("hass-more-info", { detail: { entityId: el.dataset.more }, bubbles: true, composed: true }),
+        );
   }
 
   _mountSolar() {
@@ -638,53 +653,64 @@ export class CentralHeatingCard extends HeatingCardBase {
     const today = num(this._hass, e.solar_today) ?? d.days.at(-1).solar ?? 0;
     const view = solarView(d.days, today, { t, lang, tz });
     const $ = this._fill("solar", view, H);
-    const kpis = [];
     const coll = num(this._hass, e.solar_collector);
     const stor = num(this._hass, e.solar_storage);
-    if (coll !== null || stor !== null)
-      kpis.push(
-        this._kpi(
-          t("k_collector"),
-          `${fmtTemp(coll, lang)} <small>/</small> ${fmtTemp(stor, lang)} <small>°C</small>`,
-          t("k_collector_p"),
-        ),
-      );
-    if (d.solarPump)
-      kpis.push(
-        this._kpi(
-          t("k_solar_pump"),
-          esc(t("k_solar_pump_v", { v: fmtNum(d.solarPump.hoursPerDay, lang, 1) })),
-          t("k_solar_pump_p"),
-        ),
-      );
     const months = (d.months || []).slice(1).filter((m) => m.solar !== null);
+    let year = null;
+    let best = null;
     if (months.length) {
-      const year = months.reduce((s, m) => s + m.solar, 0);
-      const best = months.reduce((a, m) => (m.solar > a.solar ? m : a));
-      const label = new Date(Date.UTC(best.y, best.m, 15)).toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", {
-        month: "long",
-        timeZone: "UTC",
-      });
-      kpis.push(
-        this._kpi(
-          t("k_solar_year"),
-          `${fmtNum(year / 1000, lang, 1)} <small>MWh</small>`,
-          t("k_solar_year_p", { m: label, v: fmtNum(best.solar, lang) }),
-        ),
-      );
-      const k = Number(this._config.kwh_per_unit) || 10;
-      const eff = Number(this._config.boiler_efficiency) || 0.85;
-      const fuel = this._config.fuel === "gas" ? "gas" : "oil";
-      const units = Math.round(year / (k * eff) / 10) * 10;
-      kpis.push(
-        this._kpi(
-          t("k_saved"),
-          esc(t(`k_saved_${fuel}`, { v: fmtNum(units, lang) })),
-          t("k_saved_p", { k: fmtNum(k, lang), e: fmtNum(eff * 100, lang) }),
-        ),
-      );
+      year = months.reduce((s, m) => s + m.solar, 0);
+      best = months.reduce((a, m) => (m.solar > a.solar ? m : a));
     }
-    $("extra").innerHTML = kpis.length ? `<div class="kpis">${kpis.join("")}</div>` : "";
+    const k = Number(this._config.kwh_per_unit) || 10;
+    const eff = Number(this._config.boiler_efficiency) || 0.85;
+    const fuel = this._config.fuel === "gas" ? "gas" : "oil";
+    $("extra").innerHTML = kpiGrid(
+      [
+        {
+          k: t("k_collector"),
+          v: coll === null && stor === null ? null : `${fmtTemp(coll, lang)} / ${fmtTemp(stor, lang)}`,
+          u: "°C",
+          icon: "sun",
+          c: "var(--chc-solar)",
+          s: t("k_collector_p"),
+          more: e.solar_collector || e.solar_storage,
+        },
+        d.solarPump && {
+          k: t("k_solar_pump"),
+          v: fmtNum(d.solarPump.hoursPerDay, lang, 1),
+          u: t("u_h_day"),
+          icon: "clock",
+          c: "var(--chc-solar)",
+          s: t("k_solar_pump_p"),
+          more: e.pump_solar,
+        },
+        year !== null && {
+          k: t("k_solar_year"),
+          v: fmtNum(year / 1000, lang, 1),
+          u: "MWh",
+          icon: "sun",
+          c: "var(--chc-solar)",
+          s: t("k_solar_year_p", {
+            m: new Date(Date.UTC(best.y, best.m, 15)).toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", {
+              month: "long",
+              timeZone: "UTC",
+            }),
+            v: fmtNum(best.solar, lang),
+          }),
+        },
+        year !== null && {
+          k: t("k_saved"),
+          v: `≈ ${fmtNum(Math.round(year / (k * eff) / 10) * 10, lang)}`,
+          u: t(`u_saved_${fuel}`),
+          icon: "drop",
+          c: "var(--chc-good)",
+          s: t("k_saved_p", { k: fmtNum(k, lang), e: fmtNum(eff * 100, lang) }),
+        },
+      ],
+      { cols: 2 },
+    );
+    this._wireMore($("extra"));
     scrub(plot, view, $("readout"));
   }
 
@@ -695,96 +721,143 @@ export class CentralHeatingCard extends HeatingCardBase {
     const fuel = this._config.fuel === "gas" ? "gas" : "oil";
     const unit = t(`unit_${fuel}`);
     const base = Number(this._config.heating_base_temp) || 15;
-    const tiles = [];
-    if (f.hoursPerHdd !== null)
-      tiles.push(
-        this._kpi(
-          t("k_hpk"),
-          `${fmtNum(f.hoursPerHdd, lang, 2)} <small>h/Kd</small>`,
-          t("k_hpk_p", { h: fmtNum(f.hours, lang), d: fmtNum(f.deg, lang) }),
-        ),
-      );
-    if (f.fuelPerHour !== null)
-      tiles.push(
-        this._kpi(
-          t(`k_fuel_h_${fuel}`),
-          `${fmtNum(f.fuelPerHour, lang, 2)} <small>${esc(unit)}/h</small>`,
-          t("k_fuel_h_p", { f: `${fmtNum(f.fuel, lang)} ${unit}`, h: fmtNum(f.hours, lang) }),
-        ),
-      );
-    if (f.fuelPerHdd !== null)
-      tiles.push(
-        this._kpi(
-          t(`k_fuel_k_${fuel}`),
-          `${fmtNum(f.fuelPerHdd, lang, 2)} <small>${esc(unit)}/Kd</small>`,
-          t("k_fuel_k_p", { b: base }),
-        ),
-      );
-    if (f.startsPerHdd !== null) tiles.push(this._kpi(t("k_spk"), fmtNum(f.startsPerHdd, lang, 1), t("k_spk_p")));
-    if (f.stage2 !== null) {
-      const life = num(this._hass, e.burner_hours_2) / num(this._hass, e.burner_hours);
-      tiles.push(
-        this._kpi(
-          t("k_stage2"),
-          `${fmtNum(f.stage2 * 100, lang)} <small>%</small>`,
-          Number.isFinite(life) ? t("k_stage2_p", { v: fmtNum(life * 100, lang) }) : "",
-        ),
-      );
-    }
-    if (f.modulation !== null)
-      tiles.push(this._kpi(t("k_mod"), `≈ ${fmtNum(f.modulation, lang)} <small>%</small>`, t("k_mod_p")));
-    if (d.summer !== null && d.summer !== undefined)
-      tiles.push(this._kpi(t("k_summer"), esc(t("k_summer_v", { v: fmtNum(d.summer, lang) })), t("k_summer_p")));
-    if (!tiles.length) return "";
+    const life = num(this._hass, e.burner_hours_2) / num(this._hass, e.burner_hours);
+    const tiles = kpiGrid(
+      [
+        f.hoursPerHdd !== null && {
+          k: t("k_hpk"),
+          v: fmtNum(f.hoursPerHdd, lang, 2),
+          u: "h/Kd",
+          icon: "clock",
+          c: "var(--chc-heat)",
+          s: t("k_hpk_p", { h: fmtNum(f.hours, lang), d: fmtNum(f.deg, lang) }),
+          more: e.burner_hours,
+        },
+        f.fuelPerHour !== null && {
+          k: t(`k_fuel_h_${fuel}`),
+          v: fmtNum(f.fuelPerHour, lang, 2),
+          u: `${unit}/h`,
+          icon: "drop",
+          c: "var(--chc-heat)",
+          s: t("k_fuel_h_p", { f: `${fmtNum(f.fuel, lang)} ${unit}`, h: fmtNum(f.hours, lang) }),
+        },
+        f.fuelPerHdd !== null && {
+          k: t(`k_fuel_k_${fuel}`),
+          v: fmtNum(f.fuelPerHdd, lang, 2),
+          u: `${unit}/Kd`,
+          icon: "thermo",
+          c: "var(--chc-heat)",
+          s: t("k_fuel_k_p", { b: base }),
+        },
+        f.startsPerHdd !== null && {
+          k: t("k_spk"),
+          v: fmtNum(f.startsPerHdd, lang, 1),
+          icon: "update",
+          c: "var(--chc-heat)",
+          s: t("k_spk_p"),
+          more: e.burner_starts,
+        },
+        f.stage2 !== null && {
+          k: t("k_stage2"),
+          v: fmtNum(f.stage2 * 100, lang),
+          u: "%",
+          icon: "fire",
+          c: "var(--chc-heat)",
+          s: Number.isFinite(life) ? t("k_stage2_p", { v: fmtNum(life * 100, lang) }) : "",
+          p: f.stage2 * 100,
+          more: e.burner_hours_2,
+        },
+        f.modulation !== null && {
+          k: t("k_mod"),
+          v: `≈ ${fmtNum(f.modulation, lang)}`,
+          u: "%",
+          icon: "gauge",
+          c: "var(--chc-heat)",
+          s: t("k_mod_p"),
+          p: f.modulation,
+        },
+        d.summer !== null &&
+          d.summer !== undefined && {
+            k: t("k_summer"),
+            v: fmtNum(d.summer, lang),
+            u: t("u_h_month"),
+            icon: "sun",
+            c: "var(--chc-water)",
+            s: t("k_summer_p"),
+          },
+      ],
+      { cols: 2 },
+    );
+    if (!tiles) return "";
     return `<section>
       <div class="section-title">${svgIcon("gauge")}<span>${esc(t("eff_title"))}</span><span class="note">${esc(t("eff_note"))}</span></div>
-      <div class="kpis flat">${tiles.join("")}</div>
+      ${tiles}
     </section>`;
   }
 
+  /** Footer figures as tiles: burner hours, starts, since the last service and how often the cloud answered. */
   _footer({ t, lang, tz, e }) {
-    const items = [];
     const hours = num(this._hass, e.burner_hours);
     const starts = num(this._hass, e.burner_starts);
-    if (hours !== null)
-      items.push({
-        k: t("f_hours"),
-        v: `${fmtNum(hours, lang)} h`,
-        d: starts ? t("f_hours_d", { v: fmtNum((hours * 60) / starts, lang, 1) }) : "",
-      });
-    if (starts !== null) items.push({ k: t("f_starts"), v: fmtNum(starts, lang), d: t("f_starts_d") });
     const m = this._data?.maint;
-    if (m && m.hours !== null && hours !== null) {
-      const date = new Date(this._config.maintenance_date).toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        timeZone: tz,
-      });
-      items.push({
-        k: t("f_maint"),
-        v: `${fmtNum(hours - m.hours, lang)} h`,
-        d:
-          m.starts !== null && starts !== null
-            ? t("f_maint_d", { n: fmtNum(starts - m.starts, lang), d: date })
-            : t("f_maint_d0", { d: date }),
-      });
-    }
     const a = this._data?.avail;
-    if (a !== null && a !== undefined)
-      items.push({
-        k: t("f_avail"),
-        v: `${fmtNum(a * 100, lang, 1)} %`,
-        d: t("f_avail_d", { b: this._resolved?.brand || "" }),
-        cls: a < 0.95 ? "warn" : "",
-      });
-    if (!items.length) return "";
-    return `<div class="footer">${items
-      .map(
-        (i) =>
-          `<div><div class="k">${esc(i.k)}</div><div class="v">${esc(i.v)}</div>${i.d ? `<div class="d${i.cls ? ` ${i.cls}` : ""}">${esc(i.d)}</div>` : ""}</div>`,
-      )
-      .join("")}</div>`;
+    const date = this._config.maintenance_date
+      ? new Date(this._config.maintenance_date).toLocaleDateString(lang === "de" ? "de-DE" : "en-GB", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+          timeZone: tz,
+        })
+      : "";
+    const tiles = kpiGrid(
+      [
+        {
+          k: t("f_hours"),
+          v: hours === null ? null : fmtNum(hours, lang),
+          u: "h",
+          icon: "clock",
+          c: "var(--chc-heat)",
+          s: hours !== null && starts ? t("f_hours_d", { v: fmtNum((hours * 60) / starts, lang, 1) }) : "",
+          more: e.burner_hours,
+        },
+        {
+          k: t("f_starts"),
+          v: starts === null ? null : fmtNum(starts, lang),
+          icon: "update",
+          c: "var(--chc-heat)",
+          s: t("f_starts_d"),
+          more: e.burner_starts,
+        },
+        {
+          k: t("f_maint"),
+          v: m && m.hours !== null && hours !== null ? fmtNum(hours - m.hours, lang) : null,
+          u: "h",
+          icon: "wrench",
+          c: "var(--chc-temp)",
+          s:
+            m && m.starts !== null && starts !== null
+              ? t("f_maint_d", { n: fmtNum(starts - m.starts, lang), d: date })
+              : t("f_maint_d0", { d: date }),
+        },
+        {
+          k: t("f_avail"),
+          v: a === null || a === undefined ? null : fmtNum(a * 100, lang, 1),
+          u: "%",
+          icon: "cloud",
+          c: a !== null && a !== undefined && a < 0.95 ? "var(--chc-mid)" : "var(--chc-good)",
+          st: a !== null && a !== undefined && a < 0.95 ? "warn" : "",
+          s: t("f_avail_d", { b: this._resolved?.brand || "" }),
+          p: a === null || a === undefined ? undefined : a * 100,
+          more: e.burner,
+        },
+      ],
+      { cols: 2 },
+    );
+    if (!tiles) return "";
+    return `<section>
+      <div class="section-title">${svgIcon("wrench")}<span>${esc(t("f_title"))}</span><span class="note">${esc(t("f_note"))}</span></div>
+      ${tiles}
+    </section>`;
   }
 
   _burnerSection({ t }) {
@@ -877,56 +950,99 @@ export class CentralHeatingCard extends HeatingCardBase {
     </div>`;
   }
 
-  _tile(key, label, v, sub, meter = null) {
-    const m = meter
-      ? `<div class="meter" style="--c:${meter.color}"><i style="width:${meter.fill}%"></i>${meter.mark === null ? "" : `<b style="left:${meter.mark}%"></b>`}</div>`
-      : "";
-    return `<div class="tile" data-tile="${key}"><span class="k">${esc(label)}</span>
-      <span class="v num">${v}${v === "–" ? "" : "<small>°C</small>"}</span><span class="s">${esc(sub)}</span>${m}</div>`;
+  /**
+   * The now tiles: boiler, flow, hot water (bar against the target, the mark at the target), outdoor with the last
+   * 24 hours as a curve, and today's burner starts (wide, red while the burner cycles). A value that is not there
+   * leaves its tile out; the rows close up.
+   */
+  _nowTiles(x, cols) {
+    const { t, h, lang, e } = x;
+    const pct = (v, max) => (v === null ? undefined : Math.max(0, Math.min(100, (v / max) * 100)));
+    const temp = (v) => (v === null || v === undefined ? null : fmtTemp(v, lang));
+    const show = (key, entity) => entity && !this._hidden(key);
+    const hours = (this._data?.hours || []).slice(-24).map((r) => r.outdoor);
+    const known = hours.filter((v) => v !== null);
+    const today = this._data?.takt?.at(-1);
+    const warn = Number(this._config.takt_warn_min) || 5;
+    const good = Number(this._config.takt_good_min) || 10;
+    const cls = today?.min ? taktClass(today.min, warn, good) : null;
+    return kpiGrid(
+      [
+        show("boiler", e.boiler_temp) && {
+          key: "boiler",
+          k: t("boiler"),
+          v: temp(h.boiler.v),
+          u: "°C",
+          icon: "fire",
+          c: "var(--chc-heat)",
+          s:
+            h.boiler.target === null && h.boiler.supply !== null
+              ? t("boiler_supply", { v: `${fmtTemp(h.boiler.supply, lang)} °C` })
+              : targetLine(h.boiler.v, h.boiler.target, "target", lang, t),
+          p: h.boiler.target === null ? undefined : pct(h.boiler.v, 90),
+          m: pct(h.boiler.target, 90),
+          more: e.boiler_temp,
+        },
+        show("flow", e.flow_temp) && {
+          key: "flow",
+          k: t("flow"),
+          v: temp(h.flow.v),
+          u: "°C",
+          icon: "thermo",
+          c: "var(--chc-heat)",
+          s: targetLine(h.flow.v, h.flow.target, "curve", lang, t),
+          p: h.flow.target === null ? undefined : pct(h.flow.v, 90),
+          m: pct(h.flow.target, 90),
+          more: e.flow_temp,
+        },
+        show("dhw", e.dhw_temp) && {
+          key: "dhw",
+          k: t("dhw"),
+          v: temp(h.dhw.v),
+          u: "°C",
+          icon: "drop",
+          c: "var(--chc-water)",
+          s: targetLine(h.dhw.v, h.dhw.target, "target", lang, t),
+          p: h.dhw.target === null ? undefined : pct(h.dhw.v, 75),
+          m: pct(h.dhw.target, 75),
+          more: e.dhw_temp,
+        },
+        show("outdoor", e.outdoor) && {
+          key: "outdoor",
+          k: t("outdoor"),
+          v: temp(h.outdoor),
+          u: "°C",
+          icon: "thermo",
+          c: "var(--chc-temp)",
+          s:
+            known.length > 1
+              ? t("k_24h", { lo: fmtTemp(Math.min(...known), lang), hi: fmtTemp(Math.max(...known), lang) })
+              : "",
+          sp: known.length > 1 ? hours : null,
+          more: e.outdoor,
+        },
+        show("starts", e.burner_starts || e.burner) && {
+          key: "starts",
+          k: t("k_starts_today"),
+          v: today && today.starts !== null ? fmtNum(today.starts, lang) : null,
+          u: today?.min ? t("k_per_start", { v: fmtNum(today.min, lang, 1) }) : "",
+          icon: "update",
+          c: cls === "warn" ? "var(--chc-warn)" : cls === "mid" ? "var(--chc-mid)" : "var(--chc-heat)",
+          st: cls === "warn" ? "bad" : cls === "mid" ? "warn" : "",
+          s: today?.min ? t("k_starts_goal", { v: fmtNum(good, lang) }) : "",
+          p: today?.min ? pct(today.min, good * 2) : undefined,
+          m: today?.min ? 50 : undefined,
+          wide: true,
+          more: e.burner_starts || e.burner,
+        },
+      ],
+      { cols },
+    );
   }
 
   _nowSection(x) {
-    const { t, h, lang, tz, now, e, animate } = x;
+    const { t, h, lang, tz, now, animate } = x;
     const b = h.burner;
-    const pct = (v, max) => (v === null ? 0 : Math.max(0, Math.min(100, (v / max) * 100)));
-    const meter = (v, target, max, color) =>
-      target === null ? null : { fill: pct(v, max), mark: pct(target, max), color };
-    const tiles = [];
-    if (e.boiler_temp && !this._hidden("boiler"))
-      tiles.push(
-        this._tile(
-          "boiler",
-          t("boiler"),
-          fmtTemp(h.boiler.v, lang),
-          h.boiler.target === null && h.boiler.supply !== null
-            ? t("boiler_supply", { v: `${fmtTemp(h.boiler.supply, lang)} °C` })
-            : targetLine(h.boiler.v, h.boiler.target, "target", lang, t),
-          meter(h.boiler.v, h.boiler.target, 90, "var(--chc-heat)"),
-        ),
-      );
-    if (e.flow_temp && !this._hidden("flow"))
-      tiles.push(
-        this._tile(
-          "flow",
-          t("flow"),
-          fmtTemp(h.flow.v, lang),
-          targetLine(h.flow.v, h.flow.target, "curve", lang, t),
-          meter(h.flow.v, h.flow.target, 90, "var(--chc-heat)"),
-        ),
-      );
-    if (e.dhw_temp && !this._hidden("dhw"))
-      tiles.push(
-        this._tile(
-          "dhw",
-          t("dhw"),
-          fmtTemp(h.dhw.v, lang),
-          targetLine(h.dhw.v, h.dhw.target, "target", lang, t),
-          meter(h.dhw.v, h.dhw.target, 75, "var(--chc-water)"),
-        ),
-      );
-    if (e.outdoor && !this._hidden("outdoor"))
-      tiles.push(this._tile("outdoor", t("outdoor"), fmtTemp(h.outdoor, lang), ""));
-
     const pumps = this._hidden("pumps")
       ? ""
       : h.pumps
@@ -949,7 +1065,7 @@ export class CentralHeatingCard extends HeatingCardBase {
     if (flat)
       return `<section>
       <div class="section-title">${svgIcon("clock")}<span>${esc(t("now"))}</span><span class="note">${esc([bt, burnerDetail(b, now, lang, tz, t)].filter(Boolean).join(" · "))}</span></div>
-      <div class="now flat"><div class="tiles">${tiles.join("")}</div></div>
+      ${this._nowTiles(x, 3)}
       ${pumps ? `<div class="pumps">${pumps}</div>` : ""}${room}
     </section>`;
     return `<section>
@@ -957,7 +1073,7 @@ export class CentralHeatingCard extends HeatingCardBase {
       <div class="now">
         <div class="burner${b.on ? " on" : ""}">${flameSVG({ on: !!b.on, level: b.level, animate })}
           <div><div class="bt">${esc(bt)}</div><div class="bs">${esc(burnerDetail(b, now, lang, tz, t))}</div></div></div>
-        <div class="tiles">${tiles.join("")}</div>
+        ${this._nowTiles(x, 2)}
       </div>
       ${pumps ? `<div class="pumps">${pumps}</div>` : ""}${room}
     </section>`;
